@@ -342,6 +342,7 @@ export const ONUS: ONU[] = [
       password: 'Admin@Fhome',
     },
     loginUiImage: 'images/onus/fiber-home-login.png',
+    deviceImage: 'images/onus/fiber-home-device.webp',
     legacyManuals: [
       {
         label: 'Manual',
