@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* Deshabilita gestos de zoom accidental en pantallas táctiles. */
+    touch-action: manipulation;
+  }
+
+  body {
+    @apply bg-slate-900 text-slate-100 antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  /* Evita el zoom automático de iOS/Android al enfocar controles de formulario. */
+  input,
+  select,
+  textarea,
+  button {
+    font-size: 16px;
+    touch-action: manipulation;
+  }
+
+  img {
+    -webkit-user-drag: none;
+    user-select: none;
+  }
+}
+
+@layer utilities {
+  /* Respeta el "notch" / barra de gestos en dispositivos iOS con pantalla completa. */
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Área táctil mínima recomendada (44px) para uso con guantes en campo. */
+  .tap-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

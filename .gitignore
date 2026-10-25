@@ -1,0 +1,38 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencias y build
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor / SO
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Entorno y secretos
+.env
+.env.*
+
+# Archivos temporales
+*.tmp
+*.temp
+*.bak
+.tmp/
+
+# Documentos fuente con credenciales (no versionar)
+ACCESOS*
