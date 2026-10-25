@@ -32,13 +32,30 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
-      - name: Compilar la aplicación
+      - name: Verificar variables de Supabase
+        run: |
+          test -n "$VITE_SUPABASE_URL" || { echo "::error::Falta vars.VITE_SUPABASE_URL"; exit 1; }
+          test -n "$VITE_SUPABASE_ANON_KEY" || { echo "::error::Falta vars.VITE_SUPABASE_ANON_KEY"; exit 1; }
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Build
         run: npm run build
         env:
           # Definir en Settings -> Secrets and variables -> Actions -> Variables.
           # La anon key es pública por diseño; la protección real es RLS.
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+
+      - name: Verificar inyección de Supabase
+        run: |
+          if ! grep -R -F -q "$VITE_SUPABASE_URL" dist/assets; then
+            echo "::error::La URL de Supabase no está presente en el bundle. Revisa las variables del repositorio."
+            exit 1
+          fi
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
 
       - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5
