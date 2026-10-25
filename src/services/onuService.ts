@@ -16,6 +16,12 @@ const FETCH_TIMEOUT_MS = 6000
 export type OnuSource = 'supabase' | 'cache' | 'fallback'
 export type SaveStage = 'photos' | 'record'
 
+/** Imagen asociada a un paso del checklist que se subirá junto con la ONU. */
+export interface StepImageUpload {
+  stepNumber: number
+  file: File
+}
+
 export interface FetchOnusResult {
   onus: ONU[]
   source: OnuSource
@@ -213,6 +219,8 @@ async function uploadWebp(file: File, remotePath: string): Promise<string> {
 /**
  * Guarda (inserta o actualiza) una ONU en Supabase.
  * Si se reciben imágenes, las comprime a WebP y las sube al bucket público.
+ * Las capturas de pasos usan una ruta estable y un query de versión para
+ * evitar que el service worker sirva una captura antigua tras reemplazarla.
  *
  * Requiere una sesión autenticada: RLS solo permite escritura a `authenticated`.
  */
@@ -220,16 +228,18 @@ export async function saveOnu(
   onu: ONU,
   loginImageFile?: File,
   deviceImageFile?: File,
+  stepImages: StepImageUpload[] = [],
   onStage?: (stage: SaveStage) => void,
 ): Promise<ONU> {
   const client = requireSupabase()
   const stamp = Date.now().toString(36)
-  const hasImages = Boolean(loginImageFile || deviceImageFile)
+  const hasImages = Boolean(loginImageFile || deviceImageFile || stepImages.length > 0)
 
   if (hasImages) onStage?.('photos')
 
   let loginUiImage = onu.loginUiImage
   let deviceImage = onu.deviceImage
+  let interactiveManual = onu.interactiveManual
 
   if (loginImageFile) {
     loginUiImage = await uploadWebp(loginImageFile, `${onu.id}-login-${stamp}.webp`)
@@ -239,9 +249,23 @@ export async function saveOnu(
     deviceImage = await uploadWebp(deviceImageFile, `${onu.id}-device-${stamp}.webp`)
   }
 
+  if (interactiveManual && stepImages.length > 0) {
+    const uploads = new Map(stepImages.map((item) => [item.stepNumber, item.file]))
+
+    interactiveManual = await Promise.all(
+      interactiveManual.map(async (step) => {
+        const file = uploads.get(step.stepNumber)
+        if (!file) return step
+
+        const baseUrl = await uploadWebp(file, `steps/${onu.id}-step-${step.stepNumber}.webp`)
+        return { ...step, screenshot: `${baseUrl}?v=${stamp}` }
+      }),
+    )
+  }
+
   onStage?.('record')
 
-  const row = mapOnuToRow({ ...onu, loginUiImage, deviceImage })
+  const row = mapOnuToRow({ ...onu, loginUiImage, deviceImage, interactiveManual })
   const { data, error } = await client
     .from('onus')
     .upsert(row, { onConflict: 'id' })

@@ -49,7 +49,9 @@ export default defineConfig({
         runtimeCaching: [
           {
             // Imágenes (incluye capturas, logos y fotos de ONUs).
-            urlPattern: /\.(?:png|jpe?g|svg|webp|gif)$/i,
+            // Admite un query de versión (?v=...) para invalidar capturas
+            // de pasos reemplazadas sin perder el caché offline.
+            urlPattern: /\.(?:png|jpe?g|svg|webp|gif)(?:\?.*)?$/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'onu-imagenes',

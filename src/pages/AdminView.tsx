@@ -24,23 +24,16 @@ import {
 } from 'lucide-react'
 import type { ONU, LegacyManualLink, ManualStep } from '../types/onu'
 import { compressImage } from '../utils/imageCompressor'
-import { serializeOnusFile } from '../utils/onusSerializer'
 import { saveOnu } from '../services/onuService'
+import type { StepImageUpload } from '../services/onuService'
 import { useSupabaseAuth } from '../hooks/useSupabaseAuth'
 import { isSupabaseConfigured } from '../lib/supabase'
-import { copyText } from '../utils/clipboard'
 
 type SaveStatus = 'idle' | 'photos' | 'record' | 'success' | 'error'
 
 interface ManualDraft {
   label: string
   url: string
-}
-
-interface StepDraft {
-  title: string
-  description: string
-  checklistText: string
 }
 
 interface ImageSlot {
@@ -52,11 +45,44 @@ interface ImageSlot {
   existingPath: string | null
 }
 
+interface StepDraft {
+  title: string
+  description: string
+  checklistText: string
+  slot: ImageSlot
+}
+
+interface BuiltOnu {
+  onu: ONU
+  stepImages: StepImageUpload[]
+}
+
 const inputClass =
   'w-full rounded-xl border border-fiber-border bg-fiber-dark/60 px-3 py-2.5 font-mono text-base text-slate-100 placeholder:text-slate-500 transition-colors focus:border-fiber-teal focus:outline-none focus:ring-2 focus:ring-fiber-teal/30'
 
 function emptySlot(): ImageSlot {
   return { file: null, blob: null, preview: null, sizeKb: null, error: null, existingPath: null }
+}
+
+function emptyStep(): StepDraft {
+  return { title: '', description: '', checklistText: '', slot: emptySlot() }
+}
+
+/** Libera únicamente previews locales; nunca revoca URLs remotas. */
+function releasePreview(slot: ImageSlot): void {
+  if (slot.preview?.startsWith('blob:')) URL.revokeObjectURL(slot.preview)
+}
+
+/** Descarga la versión WebP comprimida que se muestra en el formulario. */
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
 }
 
 function slugify(text: string): string {
@@ -80,17 +106,6 @@ function parseLines(text: string): string[] {
     .split('\n')
     .map((item) => item.trim())
     .filter(Boolean)
-}
-
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  document.body.appendChild(anchor)
-  anchor.click()
-  document.body.removeChild(anchor)
-  URL.revokeObjectURL(url)
 }
 
 function Field({
@@ -120,6 +135,7 @@ function ImageDropzone({
   slot,
   onFile,
   onClear,
+  compact = false,
 }: {
   title: string
   hint: string
@@ -127,6 +143,7 @@ function ImageDropzone({
   slot: ImageSlot
   onFile: (file: File) => void
   onClear: () => void
+  compact?: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -152,7 +169,11 @@ function ImageDropzone({
       {slot.preview ? (
         <>
           <div className="relative overflow-hidden rounded-xl border border-fiber-border bg-fiber-dark">
-            <img src={slot.preview} alt={title} className="h-36 w-full object-contain" />
+            <img
+              src={slot.preview}
+              alt={title}
+              className={`${compact ? 'h-28' : 'h-36'} w-full object-contain`}
+            />
             <button
               type="button"
               onClick={onClear}
@@ -169,14 +190,25 @@ function ImageDropzone({
               Reemplazar
             </button>
           </div>
+          {compact && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-red-400/30 bg-red-500/10 px-3 font-mono text-xs font-bold text-red-300 transition-colors hover:bg-red-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+            >
+              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+              Quitar captura
+            </button>
+          )}
           <p className="font-mono text-[11px] font-medium text-slate-400">
             {slot.sizeKb !== null ? `Comprimido: ${slot.sizeKb} KB en WebP` : 'Imagen actual'}
             {slot.file ? ' · nueva' : ''}
           </p>
           <p className="font-mono text-[11px] text-slate-500">
-            Se subirá a <code className="font-mono text-fiber-cyan/90">{targetName}</code>
+            Se subirá a{' '}
+            <code className="break-all font-mono text-fiber-cyan/90">{targetName}</code>
           </p>
-          {blob && (
+          {blob && !compact && (
             <button
               type="button"
               onClick={() => downloadBlob(blob, targetName.split('/').pop() ?? 'imagen.webp')}
@@ -200,15 +232,28 @@ function ImageDropzone({
           }}
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
-          className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+          className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border-2 border-dashed text-center transition-colors ${
+            compact ? 'p-3' : 'p-6'
+          } ${
             dragging
               ? 'border-fiber-cyan bg-fiber-teal/10 shadow-cyan-glow'
               : 'border-fiber-border bg-fiber-dark/40 hover:border-fiber-teal/60'
           }`}
         >
-          <ImagePlus className="h-7 w-7 text-fiber-teal/60" aria-hidden="true" />
-          <p className="font-mono text-xs font-semibold text-slate-300">{hint}</p>
-          <p className="font-mono text-[11px] text-slate-500">PNG / JPG · se optimiza a WebP</p>
+          <ImagePlus
+            className={`${compact ? 'h-5 w-5' : 'h-7 w-7'} text-fiber-teal/60`}
+            aria-hidden="true"
+          />
+          <p
+            className={`font-mono ${compact ? 'text-[11px]' : 'text-xs'} font-semibold text-slate-300`}
+          >
+            {hint}
+          </p>
+          <p
+            className={`font-mono ${compact ? 'text-[10px]' : 'text-[11px]'} text-slate-500`}
+          >
+            PNG / JPG · se optimiza a WebP
+          </p>
         </div>
       )}
 
@@ -255,24 +300,21 @@ export function AdminView({
   const [manuals, setManuals] = useState<ManualDraft[]>([{ label: '', url: '' }])
 
   const [enableChecklist, setEnableChecklist] = useState(false)
-  const [steps, setSteps] = useState<StepDraft[]>([
-    { title: '', description: '', checklistText: '' },
-  ])
+  const [steps, setSteps] = useState<StepDraft[]>([emptyStep()])
 
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [saveMessage, setSaveMessage] = useState('')
-  const [promptCopied, setPromptCopied] = useState(false)
 
-  const promptTimerRef = useRef<number | null>(null)
   const loadedEditIdRef = useRef<string | null>(null)
 
-  useEffect(() => {
-    return () => {
-      if (promptTimerRef.current !== null) window.clearTimeout(promptTimerRef.current)
-    }
-  }, [])
+  const releaseCurrentPreviews = () => {
+    releasePreview(loginSlot)
+    releasePreview(deviceSlot)
+    steps.forEach((step) => releasePreview(step.slot))
+  }
 
   const resetForm = () => {
+    releaseCurrentPreviews()
     setEditingId(null)
     setBrand('')
     setModel('')
@@ -285,7 +327,7 @@ export function AdminView({
     setNotes('')
     setManuals([{ label: '', url: '' }])
     setEnableChecklist(false)
-    setSteps([{ title: '', description: '', checklistText: '' }])
+    setSteps([emptyStep()])
     setLoginSlot(emptySlot())
     setDeviceSlot(emptySlot())
     setSaveStatus('idle')
@@ -293,6 +335,7 @@ export function AdminView({
   }
 
   const loadOnu = (onu: ONU) => {
+    releaseCurrentPreviews()
     setEditingId(onu.id)
     setBrand(onu.brand)
     setModel(onu.model)
@@ -319,8 +362,16 @@ export function AdminView({
             title: step.title,
             description: step.description,
             checklistText: (step.checklist ?? []).join('\n'),
+            slot: {
+              file: null,
+              blob: null,
+              preview: step.screenshot ?? null,
+              sizeKb: null,
+              error: null,
+              existingPath: step.screenshot ?? null,
+            },
           }))
-        : [{ title: '', description: '', checklistText: '' }],
+        : [emptyStep()],
     )
 
     setLoginSlot({
@@ -377,6 +428,26 @@ export function AdminView({
     }
   }
 
+  const processStepImage = (index: number, file: File) => {
+    void processImage(file, (action) => {
+      setSteps((prev) =>
+        prev.map((step, i) => {
+          if (i !== index) return step
+          const nextSlot = typeof action === 'function' ? action(step.slot) : action
+          return { ...step, slot: nextSlot }
+        }),
+      )
+    })
+  }
+
+  const clearStepSlot = (index: number) => {
+    const target = steps[index]
+    if (target) releasePreview(target.slot)
+    setSteps((prev) =>
+      prev.map((step, i) => (i === index ? { ...step, slot: emptySlot() } : step)),
+    )
+  }
+
   const currentId = slug.trim() || slugify(`${brand}-${model}`) || 'nueva-onu'
 
   const manualRowsValid = manuals.every((manual) => {
@@ -428,18 +499,19 @@ export function AdminView({
     setManuals((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const addStep = () =>
-    setSteps((prev) => [...prev, { title: '', description: '', checklistText: '' }])
+  const addStep = () => setSteps((prev) => [...prev, emptyStep()])
 
   const updateStep = (index: number, patch: Partial<StepDraft>) => {
     setSteps((prev) => prev.map((step, i) => (i === index ? { ...step, ...patch } : step)))
   }
 
   const removeStep = (index: number) => {
+    const target = steps[index]
+    if (target) releasePreview(target.slot)
     setSteps((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const buildOnu = (): ONU | null => {
+  const buildOnu = (): BuiltOnu | null => {
     const trimmedBrand = brand.trim()
     const trimmedModel = model.trim()
     const trimmedUsername = username.trim()
@@ -459,96 +531,51 @@ export function AdminView({
       .map((manual) => ({ label: manual.label.trim(), url: manual.url.trim() }))
       .filter((manual) => manual.label !== '' && manual.url !== '')
 
-    const interactiveManual: ManualStep[] | undefined = enableChecklist
-      ? steps
-          .map((step, index) => ({
-            stepNumber: index + 1,
-            title: step.title.trim(),
-            description: step.description.trim(),
-            checklist: parseLines(step.checklistText),
-          }))
-          .filter((step) => step.title !== '')
-      : undefined
+    const interactiveManual: ManualStep[] = []
+    const stepImages: StepImageUpload[] = []
+
+    if (enableChecklist) {
+      steps.forEach((step) => {
+        const title = step.title.trim()
+        if (title === '') return
+
+        const stepNumber = interactiveManual.length + 1
+        interactiveManual.push({
+          stepNumber,
+          title,
+          description: step.description.trim(),
+          checklist: parseLines(step.checklistText),
+          screenshot: step.slot.file ? undefined : (step.slot.existingPath ?? undefined),
+        })
+
+        if (step.slot.file) {
+          stepImages.push({ stepNumber, file: step.slot.file })
+        }
+      })
+    }
 
     const deviceImage = deviceSlot.file
       ? `images/onus/${id}-device.webp`
       : (deviceSlot.existingPath ?? undefined)
 
     return {
-      id,
-      brand: trimmedBrand,
-      model: trimmedModel,
-      aliases: parseList(aliasesText),
-      defaultIp: defaultIp.trim(),
-      credentials: { username: trimmedUsername, password },
-      loginUiImage: loginSlot.file
-        ? `images/onus/${id}-login.webp`
-        : (loginSlot.existingPath ?? ''),
-      deviceImage,
-      legacyManuals: legacyManuals.length > 0 ? legacyManuals : undefined,
-      interactiveManual:
-        interactiveManual && interactiveManual.length > 0 ? interactiveManual : undefined,
-      notes: notes.trim() || undefined,
+      onu: {
+        id,
+        brand: trimmedBrand,
+        model: trimmedModel,
+        aliases: parseList(aliasesText),
+        defaultIp: defaultIp.trim(),
+        credentials: { username: trimmedUsername, password },
+        loginUiImage: loginSlot.file
+          ? `images/onus/${id}-login.webp`
+          : (loginSlot.existingPath ?? ''),
+        deviceImage,
+        legacyManuals: legacyManuals.length > 0 ? legacyManuals : undefined,
+        interactiveManual: interactiveManual.length > 0 ? interactiveManual : undefined,
+        notes: notes.trim() || undefined,
+      },
+      stepImages,
     }
-  }
-
-  const handleDownloadFile = () => {
-    const onu = buildOnu()
-    if (!onu) {
-      setSaveStatus('error')
-      setSaveMessage(
-        'Completa Marca, Modelo, Usuario, Contraseña y revisa los enlaces de manual (Etiqueta + URL).',
-      )
-      return
-    }
-
-    const updated = editingId
-      ? onus.map((existing) => (existing.id === editingId ? onu : existing))
-      : [...onus, onu]
-
-    downloadBlob(
-      new Blob([serializeOnusFile(updated)], { type: 'text/plain;charset=utf-8' }),
-      'onus.ts',
-    )
-
-    setSaveStatus('success')
-    setSaveMessage(
-      'onus.ts descargado como respaldo. Los cambios principales se guardan en Supabase.',
-    )
-  }
-
-  const handleCopyPrompt = async () => {
-    const onu = buildOnu()
-    if (!onu) {
-      setSaveStatus('error')
-      setSaveMessage(
-        'Completa Marca, Modelo, Usuario, Contraseña y revisa los enlaces de manual (Etiqueta + URL).',
-      )
-      return
-    }
-
-    const prompt = [
-      'Respaldo local: inserta o reemplaza esta ONU en el arreglo ONUS de src/data/onus.ts.',
-      '',
-      '```ts',
-      JSON.stringify(onu, null, 2),
-      '```',
-      '',
-    ].join('\n')
-
-    const ok = await copyText(prompt)
-    if (!ok) {
-      setSaveStatus('error')
-      setSaveMessage('No se pudo copiar al portapapeles.')
-      return
-    }
-
-    setPromptCopied(true)
-    if (promptTimerRef.current !== null) window.clearTimeout(promptTimerRef.current)
-    promptTimerRef.current = window.setTimeout(() => setPromptCopied(false), 2500)
-
-    setSaveStatus('success')
-    setSaveMessage('Prompt de respaldo copiado. Pégalo en OpenCode si necesitas volver a onus.ts.')
   }
 
   const handleSignIn = async (event: FormEvent<HTMLFormElement>) => {
@@ -575,12 +602,14 @@ export function AdminView({
   }
 
   const handleSaveOnu = async () => {
-    const onu = buildOnu()
-    if (!onu) {
+    const built = buildOnu()
+    if (!built) {
       setSaveStatus('error')
       setSaveMessage('Completa los campos obligatorios y revisa los enlaces de manual.')
       return
     }
+
+    const { onu, stepImages } = built
 
     if (!session) {
       setSaveStatus('error')
@@ -596,20 +625,21 @@ export function AdminView({
       return
     }
 
-    const hasImages = Boolean(loginSlot.file || deviceSlot.file)
+    const hasImages = Boolean(loginSlot.file || deviceSlot.file || stepImages.length > 0)
 
     try {
       setSaveStatus(hasImages ? 'photos' : 'record')
-      setSaveMessage(hasImages ? 'Subiendo fotos a Supabase...' : 'Guardando registro...')
+      setSaveMessage(hasImages ? 'Subiendo imágenes a Supabase...' : 'Guardando registro...')
 
       const saved = await saveOnu(
         onu,
         loginSlot.file ?? undefined,
         deviceSlot.file ?? undefined,
+        stepImages,
         (stage) => {
           if (stage === 'photos') {
             setSaveStatus('photos')
-            setSaveMessage('Subiendo fotos a Supabase...')
+            setSaveMessage('Subiendo imágenes a Supabase...')
           } else {
             setSaveStatus('record')
             setSaveMessage('Guardando registro...')
@@ -617,6 +647,7 @@ export function AdminView({
         },
       )
 
+      releaseCurrentPreviews()
       onSaved(saved)
       setEditingId(saved.id)
       setSlug(saved.id)
@@ -637,6 +668,29 @@ export function AdminView({
         error: null,
         existingPath: saved.deviceImage ?? null,
       })
+
+      if (saved.interactiveManual && saved.interactiveManual.length > 0) {
+        setSteps(
+          saved.interactiveManual.map((step) => ({
+            title: step.title,
+            description: step.description,
+            checklistText: (step.checklist ?? []).join('\n'),
+            slot: {
+              file: null,
+              blob: null,
+              preview: step.screenshot ?? null,
+              sizeKb: null,
+              error: null,
+              existingPath: step.screenshot ?? null,
+            },
+          })),
+        )
+        setEnableChecklist(true)
+      } else {
+        setSteps([emptyStep()])
+        setEnableChecklist(false)
+      }
+
       setSaveStatus('success')
       setSaveMessage('¡Guardado con éxito en Supabase! Ya está disponible en tiempo real.')
     } catch (error) {
@@ -898,7 +952,10 @@ export function AdminView({
             targetName={`onu-images/${currentId}-login.webp`}
             slot={loginSlot}
             onFile={(file) => void processImage(file, setLoginSlot)}
-            onClear={() => setLoginSlot(emptySlot())}
+            onClear={() => {
+              releasePreview(loginSlot)
+              setLoginSlot(emptySlot())
+            }}
           />
           <ImageDropzone
             title="📦 Foto física de la ONU"
@@ -906,7 +963,10 @@ export function AdminView({
             targetName={`onu-images/${currentId}-device.webp`}
             slot={deviceSlot}
             onFile={(file) => void processImage(file, setDeviceSlot)}
-            onClear={() => setDeviceSlot(emptySlot())}
+            onClear={() => {
+              releasePreview(deviceSlot)
+              setDeviceSlot(emptySlot())
+            }}
           />
         </div>
       </section>
@@ -1066,6 +1126,23 @@ export function AdminView({
                     rows={3}
                     className={`${inputClass} resize-y`}
                   />
+
+                  <div className="mt-1 rounded-xl border border-fiber-border/70 bg-fiber-dark/40 p-3">
+                    <ImageDropzone
+                      title={`Captura del paso ${index + 1} (opcional)`}
+                      hint="Arrastrar o seleccionar captura para este paso"
+                      targetName={`onu-images/steps/${currentId}-step-${index + 1}.webp`}
+                      slot={step.slot}
+                      onFile={(file) => processStepImage(index, file)}
+                      onClear={() => clearStepSlot(index)}
+                      compact
+                    />
+                    {step.slot.preview && step.title.trim() === '' && (
+                      <p className="mt-2 font-mono text-[11px] font-medium text-fiber-amber">
+                        Agrega un título para guardar este paso y su captura.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -1135,11 +1212,9 @@ export function AdminView({
           )}
           {isWorking
             ? saveStatus === 'photos'
-              ? 'Subiendo fotos…'
-              : 'Guardando registro…'
-            : editingId
-              ? 'Actualizar ONU en Supabase'
-              : 'Guardar ONU en Supabase'}
+              ? 'Subiendo imágenes…'
+              : 'Guardando…'
+            : 'Guardar en Supabase'}
         </button>
 
         {saveStatus === 'success' && (
@@ -1150,38 +1225,6 @@ export function AdminView({
             Ver catálogo actualizado
           </a>
         )}
-
-        <div className="rounded-xl border border-fiber-border bg-fiber-card/40 p-3">
-          <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
-            Respaldo local (opcional)
-          </p>
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              onClick={handleDownloadFile}
-              disabled={!requiredOk}
-              className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-4 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span aria-hidden="true">💾</span>
-              Descargar archivo onus.ts
-            </button>
-
-            <button
-              type="button"
-              onClick={() => void handleCopyPrompt()}
-              disabled={!requiredOk}
-              className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-4 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <span aria-hidden="true">{promptCopied ? '✅' : '📋'}</span>
-              {promptCopied ? 'Prompt copiado' : 'Copiar Código para OpenCode'}
-            </button>
-          </div>
-          <p className="mt-2 font-mono text-[11px] leading-relaxed text-slate-500">
-            Los cambios principales se guardan en Supabase. Este respaldo sirve para reemplazar{' '}
-            <code className="font-mono text-fiber-cyan/90">src/data/onus.ts</code> si necesitas
-            volver al modo estático.
-          </p>
-        </div>
       </section>
     </div>
   )
