@@ -1,6 +1,6 @@
 export interface CompressedImage {
   blob: Blob
-  /** Base64 puro, sin el prefijo `data:image/webp;base64,` (listo para la API de GitHub). */
+  /** Base64 puro, sin el prefijo `data:image/webp;base64,` (útil para respaldos locales). */
   base64: string
   previewUrl: string
   sizeKb: number

@@ -34,6 +34,11 @@ jobs:
 
       - name: Compilar la aplicación
         run: npm run build
+        env:
+          # Definir en Settings -> Secrets and variables -> Actions -> Variables.
+          # La anon key es pública por diseño; la protección real es RLS.
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
 
       - name: Configurar GitHub Pages
         uses: actions/configure-pages@v5

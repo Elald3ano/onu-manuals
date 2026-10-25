@@ -6,10 +6,11 @@ import {
   ExternalLink,
   Info,
   KeyRound,
+  Loader2,
   User,
   Wifi,
 } from 'lucide-react'
-import { getOnuById } from '../data/onus'
+import type { ONU } from '../types/onu'
 import { CopyButton } from '../components/CopyButton'
 import { ShareButton } from '../components/ShareButton'
 import { InteractiveGuide } from '../components/InteractiveGuide'
@@ -17,6 +18,8 @@ import { OnuImageGallery } from '../components/OnuImageGallery'
 
 interface DetailViewProps {
   id: string
+  onus: ONU[]
+  loading?: boolean
 }
 
 interface AccessFieldProps {
@@ -50,21 +53,27 @@ function AccessField({ label, value, copyValue, icon }: AccessFieldProps) {
   )
 }
 
-export function DetailView({ id }: DetailViewProps) {
-  const onu = getOnuById(id)
+export function DetailView({ id, onus, loading = false }: DetailViewProps) {
+  const onu = onus.find((item) => item.id === id)
 
   if (!onu) {
     return (
       <div className="mx-auto flex max-w-lg flex-col items-center gap-4 rounded-2xl border border-fiber-border bg-fiber-card p-8 text-center shadow-card-glow">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-red-500/30 bg-red-500/10 text-red-300">
-          <AlertTriangle className="h-7 w-7" aria-hidden="true" />
+          {loading ? (
+            <Loader2 className="h-7 w-7 animate-spin text-fiber-cyan" aria-hidden="true" />
+          ) : (
+            <AlertTriangle className="h-7 w-7" aria-hidden="true" />
+          )}
         </div>
         <div>
           <h2 className="font-mono text-lg font-bold uppercase tracking-wide text-slate-50">
-            Equipo no encontrado
+            {loading ? 'Cargando equipo…' : 'Equipo no encontrado'}
           </h2>
           <p className="mt-1 text-sm text-slate-400">
-            No existe una ONU con el identificador “{id}”.
+            {loading
+              ? 'Sincronizando el catálogo con Supabase…'
+              : `No existe una ONU con el identificador “${id}”.`}
           </p>
         </div>
         <a

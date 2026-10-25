@@ -351,3 +351,10 @@ export const ONUS: ONU[] = [
     ],
   },
 ]
+
+/**
+ * Alias explícito del catálogo empaquetado.
+ * Se usa como fallback cuando Supabase no está configurado, no hay red
+ * y tampoco existe una caché local válida.
+ */
+export const INITIAL_ONUS: ONU[] = ONUS

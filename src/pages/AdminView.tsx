@@ -1,34 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, Dispatch, DragEvent, ReactNode, SetStateAction } from 'react'
+import type {
+  ChangeEvent,
+  Dispatch,
+  DragEvent,
+  FormEvent,
+  ReactNode,
+  SetStateAction,
+} from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
+  Cloud,
+  CloudOff,
   ImagePlus,
-  Info,
   Loader2,
+  LogIn,
+  LogOut,
   Plus,
-  Settings,
+  RefreshCw,
   Trash2,
   X,
 } from 'lucide-react'
 import type { ONU, LegacyManualLink, ManualStep } from '../types/onu'
-import { getOnuById, ONUS } from '../data/onus'
 import { compressImage } from '../utils/imageCompressor'
 import { serializeOnusFile } from '../utils/onusSerializer'
-import {
-  isConfigComplete,
-  loadConfig,
-  publishNewOnu,
-  saveConfig,
-  testConnection,
-  updateExistingOnu,
-  type GithubConfig,
-} from '../utils/githubPublisher'
+import { saveOnu } from '../services/onuService'
+import { useSupabaseAuth } from '../hooks/useSupabaseAuth'
+import { isSupabaseConfigured } from '../lib/supabase'
 import { copyText } from '../utils/clipboard'
 
-type PublishStatus = 'idle' | 'compressing' | 'uploading' | 'success' | 'error'
-type ActionMode = 'manual' | 'advanced'
+type SaveStatus = 'idle' | 'photos' | 'record' | 'success' | 'error'
 
 interface ManualDraft {
   label: string
@@ -172,7 +174,7 @@ function ImageDropzone({
             {slot.file ? ' · nueva' : ''}
           </p>
           <p className="font-mono text-[11px] text-slate-500">
-            Se guardará como <code className="font-mono text-fiber-cyan/90">{targetName}</code>
+            Se subirá a <code className="font-mono text-fiber-cyan/90">{targetName}</code>
           </p>
           {blob && (
             <button
@@ -217,163 +219,24 @@ function ImageDropzone({
   )
 }
 
-function SettingsModal({
-  config,
-  onChange,
-  onClose,
-}: {
-  config: GithubConfig
-  onChange: (config: GithubConfig) => void
-  onClose: () => void
-}) {
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null)
-
-  const update = (patch: Partial<GithubConfig>) => onChange({ ...config, ...patch })
-
-  const handleTest = async () => {
-    setTesting(true)
-    setTestResult(null)
-    try {
-      saveConfig(config)
-      await testConnection()
-      setTestResult({ ok: true, message: 'Conexión exitosa: token y repositorio válidos.' })
-    } catch (error) {
-      setTestResult({
-        ok: false,
-        message: error instanceof Error ? error.message : 'No se pudo conectar.',
-      })
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  const handleSave = () => {
-    saveConfig(config)
-    onClose()
-  }
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-fiber-dark/85 p-0 backdrop-blur-sm sm:items-center sm:p-4"
-      onClick={onClose}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Configuración de GitHub"
-        onClick={(event) => event.stopPropagation()}
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-fiber-border bg-fiber-card p-5 shadow-cyan-glow sm:rounded-2xl"
-      >
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <Settings className="h-5 w-5 text-fiber-cyan" aria-hidden="true" />
-            <h2 className="font-mono text-base font-bold uppercase tracking-wide text-slate-50">Configuración de GitHub</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Cerrar configuración"
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-fiber-cardHover hover:text-fiber-cyan"
-          >
-            <X className="h-5 w-5" aria-hidden="true" />
-          </button>
-        </div>
-
-        <p className="mb-4 text-xs leading-relaxed text-slate-400">
-          Opcional: solo necesaria para el push directo por API. El token se guarda solo en este
-          dispositivo (localStorage) y requiere permiso <code className="font-mono text-fiber-cyan/90">repo</code>{' '}
-          o <code className="font-mono text-fiber-cyan/90">contents:write</code>.
-        </p>
-
-        <div className="flex flex-col gap-3">
-          <Field label="Token (PAT)" required>
-            <input
-              type="password"
-              value={config.githubToken}
-              onChange={(event) => update({ githubToken: event.target.value })}
-              placeholder="ghp_…"
-              autoComplete="off"
-              className={inputClass}
-            />
-          </Field>
-
-          <Field label="Usuario / Organización" required>
-            <input
-              type="text"
-              value={config.repoOwner}
-              onChange={(event) => update({ repoOwner: event.target.value })}
-              placeholder="tu-usuario"
-              autoComplete="off"
-              className={inputClass}
-            />
-          </Field>
-
-          <Field label="Repositorio" required>
-            <input
-              type="text"
-              value={config.repoName}
-              onChange={(event) => update({ repoName: event.target.value })}
-              placeholder="onu-manuals"
-              autoComplete="off"
-              className={inputClass}
-            />
-          </Field>
-
-          <Field label="Rama">
-            <input
-              type="text"
-              value={config.branch}
-              onChange={(event) => update({ branch: event.target.value })}
-              placeholder="main"
-              autoComplete="off"
-              className={inputClass}
-            />
-          </Field>
-        </div>
-
-        {testResult && (
-          <div
-            className={`mt-3 rounded-xl p-3 text-sm font-medium ${
-              testResult.ok
-                ? 'bg-fiber-emerald/15 text-fiber-emerald'
-                : 'bg-red-500/15 text-red-400'
-            }`}
-          >
-            {testResult.message}
-          </div>
-        )}
-
-        <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={handleTest}
-            disabled={testing || !isConfigComplete(config)}
-            className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-4 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {testing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-            Probar conexión
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            className="flex min-h-[44px] items-center justify-center rounded-xl bg-gradient-to-r from-fiber-teal to-fiber-cyan px-5 font-mono text-sm font-bold uppercase tracking-wide text-fiber-dark shadow-cyan-glow transition-all duration-200 hover:from-fiber-cyan hover:to-fiber-teal"
-          >
-            Guardar
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 interface AdminViewProps {
   editId?: string
+  onus: ONU[]
+  loading?: boolean
+  onSaved: (onu: ONU) => void
 }
 
-export function AdminView({ editId }: AdminViewProps) {
-  const [config, setConfig] = useState<GithubConfig>(() => loadConfig())
-  const [showSettings, setShowSettings] = useState(false)
+export function AdminView({
+  editId,
+  onus,
+  loading: catalogLoading = false,
+  onSaved,
+}: AdminViewProps) {
+  const { session, loading: authLoading, signIn, signOut } = useSupabaseAuth()
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authError, setAuthError] = useState('')
+  const [authSubmitting, setAuthSubmitting] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 
   const [loginSlot, setLoginSlot] = useState<ImageSlot>(emptySlot)
@@ -396,12 +259,12 @@ export function AdminView({ editId }: AdminViewProps) {
     { title: '', description: '', checklistText: '' },
   ])
 
-  const [actionMode, setActionMode] = useState<ActionMode>('manual')
-  const [publishStatus, setPublishStatus] = useState<PublishStatus>('idle')
-  const [publishMessage, setPublishMessage] = useState('')
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
+  const [saveMessage, setSaveMessage] = useState('')
   const [promptCopied, setPromptCopied] = useState(false)
 
   const promptTimerRef = useRef<number | null>(null)
+  const loadedEditIdRef = useRef<string | null>(null)
 
   useEffect(() => {
     return () => {
@@ -425,8 +288,8 @@ export function AdminView({ editId }: AdminViewProps) {
     setSteps([{ title: '', description: '', checklistText: '' }])
     setLoginSlot(emptySlot())
     setDeviceSlot(emptySlot())
-    setPublishStatus('idle')
-    setPublishMessage('')
+    setSaveStatus('idle')
+    setSaveMessage('')
   }
 
   const loadOnu = (onu: ONU) => {
@@ -477,17 +340,22 @@ export function AdminView({ editId }: AdminViewProps) {
       existingPath: onu.deviceImage || null,
     })
 
-    setPublishStatus('idle')
-    setPublishMessage('')
+    setSaveStatus('idle')
+    setSaveMessage('')
   }
 
   useEffect(() => {
-    if (editId) {
-      const onu = getOnuById(editId)
-      if (onu) loadOnu(onu)
+    if (!editId) {
+      loadedEditIdRef.current = null
+      return
     }
+    if (loadedEditIdRef.current === editId) return
+    const onu = onus.find((item) => item.id === editId)
+    if (!onu) return
+    loadOnu(onu)
+    loadedEditIdRef.current = editId
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editId])
+  }, [editId, onus])
 
   const processImage = async (file: File, setSlot: Dispatch<SetStateAction<ImageSlot>>) => {
     if (!file.type.startsWith('image/')) {
@@ -531,7 +399,7 @@ export function AdminView({ editId }: AdminViewProps) {
       resetForm()
       return
     }
-    const onu = getOnuById(value)
+    const onu = onus.find((item) => item.id === value)
     if (onu) loadOnu(onu)
   }
 
@@ -627,42 +495,40 @@ export function AdminView({ editId }: AdminViewProps) {
   const handleDownloadFile = () => {
     const onu = buildOnu()
     if (!onu) {
-      setPublishStatus('error')
-      setPublishMessage(
+      setSaveStatus('error')
+      setSaveMessage(
         'Completa Marca, Modelo, Usuario, Contraseña y revisa los enlaces de manual (Etiqueta + URL).',
       )
       return
     }
 
     const updated = editingId
-      ? ONUS.map((existing) => (existing.id === editingId ? onu : existing))
-      : [...ONUS, onu]
+      ? onus.map((existing) => (existing.id === editingId ? onu : existing))
+      : [...onus, onu]
 
     downloadBlob(
       new Blob([serializeOnusFile(updated)], { type: 'text/plain;charset=utf-8' }),
       'onus.ts',
     )
 
-    setPublishStatus('success')
-    setPublishMessage(
-      'onus.ts descargado. Reemplaza src/data/onus.ts con este archivo y haz push. Si subiste imágenes nuevas, descárgalas y guárdalas en public/images/onus/.',
+    setSaveStatus('success')
+    setSaveMessage(
+      'onus.ts descargado como respaldo. Los cambios principales se guardan en Supabase.',
     )
   }
 
   const handleCopyPrompt = async () => {
     const onu = buildOnu()
     if (!onu) {
-      setPublishStatus('error')
-      setPublishMessage(
+      setSaveStatus('error')
+      setSaveMessage(
         'Completa Marca, Modelo, Usuario, Contraseña y revisa los enlaces de manual (Etiqueta + URL).',
       )
       return
     }
 
     const prompt = [
-      'Actualiza esta ONU en onus.ts y haz push.',
-      '',
-      'Inserta o reemplaza el siguiente objeto dentro del arreglo ONUS de src/data/onus.ts:',
+      'Respaldo local: inserta o reemplaza esta ONU en el arreglo ONUS de src/data/onus.ts.',
       '',
       '```ts',
       JSON.stringify(onu, null, 2),
@@ -672,8 +538,8 @@ export function AdminView({ editId }: AdminViewProps) {
 
     const ok = await copyText(prompt)
     if (!ok) {
-      setPublishStatus('error')
-      setPublishMessage('No se pudo copiar al portapapeles.')
+      setSaveStatus('error')
+      setSaveMessage('No se pudo copiar al portapapeles.')
       return
     }
 
@@ -681,66 +547,105 @@ export function AdminView({ editId }: AdminViewProps) {
     if (promptTimerRef.current !== null) window.clearTimeout(promptTimerRef.current)
     promptTimerRef.current = window.setTimeout(() => setPromptCopied(false), 2500)
 
-    setPublishStatus('success')
-    setPublishMessage('Prompt copiado. Pégalo en OpenCode para actualizar onus.ts y hacer push.')
+    setSaveStatus('success')
+    setSaveMessage('Prompt de respaldo copiado. Pégalo en OpenCode si necesitas volver a onus.ts.')
   }
 
-  const handlePublish = async () => {
+  const handleSignIn = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setAuthError('')
+    setAuthSubmitting(true)
+    try {
+      await signIn(authEmail.trim(), authPassword)
+      setAuthPassword('')
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'No se pudo iniciar sesión.')
+    } finally {
+      setAuthSubmitting(false)
+    }
+  }
+
+  const handleSignOut = async () => {
+    setAuthError('')
+    try {
+      await signOut()
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : 'No se pudo cerrar sesión.')
+    }
+  }
+
+  const handleSaveOnu = async () => {
     const onu = buildOnu()
     if (!onu) {
-      setPublishStatus('error')
-      setPublishMessage('Completa los campos obligatorios y revisa los enlaces de manual.')
+      setSaveStatus('error')
+      setSaveMessage('Completa los campos obligatorios y revisa los enlaces de manual.')
       return
     }
 
-    if (!isConfigComplete(config)) {
-      setShowSettings(true)
-      setPublishStatus('idle')
+    if (!session) {
+      setSaveStatus('error')
+      setSaveMessage('Inicia sesión como administrador para guardar en Supabase.')
       return
     }
 
-    saveConfig(config)
+    if (!editingId && onus.some((item) => item.id === onu.id)) {
+      setSaveStatus('error')
+      setSaveMessage(
+        `Ya existe una ONU con el ID "${onu.id}". Cambia el slug o edita la existente.`,
+      )
+      return
+    }
+
+    const hasImages = Boolean(loginSlot.file || deviceSlot.file)
 
     try {
-      let loginBase64: string | undefined
-      let deviceBase64: string | undefined
+      setSaveStatus(hasImages ? 'photos' : 'record')
+      setSaveMessage(hasImages ? 'Subiendo fotos a Supabase...' : 'Guardando registro...')
 
-      if (loginSlot.file) {
-        setPublishStatus('compressing')
-        setPublishMessage('Comprimiendo imagen de interfaz...')
-        loginBase64 = (await compressImage(loginSlot.file)).base64
-      }
-
-      if (deviceSlot.file) {
-        setPublishStatus('compressing')
-        setPublishMessage('Comprimiendo foto del equipo...')
-        deviceBase64 = (await compressImage(deviceSlot.file)).base64
-      }
-
-      setPublishStatus('uploading')
-      setPublishMessage('Subiendo a GitHub...')
-
-      const images = { login: loginBase64, device: deviceBase64 }
-
-      if (editingId) {
-        await updateExistingOnu(onu, images)
-      } else {
-        await publishNewOnu(onu, images)
-      }
-
-      setPublishStatus('success')
-      setPublishMessage(
-        editingId
-          ? '¡Actualizado con éxito! GitHub Actions actualizará la web en 1 minuto.'
-          : '¡Publicado con éxito! GitHub Actions actualizará la web en 1 minuto.',
+      const saved = await saveOnu(
+        onu,
+        loginSlot.file ?? undefined,
+        deviceSlot.file ?? undefined,
+        (stage) => {
+          if (stage === 'photos') {
+            setSaveStatus('photos')
+            setSaveMessage('Subiendo fotos a Supabase...')
+          } else {
+            setSaveStatus('record')
+            setSaveMessage('Guardando registro...')
+          }
+        },
       )
+
+      onSaved(saved)
+      setEditingId(saved.id)
+      setSlug(saved.id)
+      setSlugTouched(true)
+      setLoginSlot({
+        file: null,
+        blob: null,
+        preview: saved.loginUiImage || null,
+        sizeKb: null,
+        error: null,
+        existingPath: saved.loginUiImage || null,
+      })
+      setDeviceSlot({
+        file: null,
+        blob: null,
+        preview: saved.deviceImage ?? null,
+        sizeKb: null,
+        error: null,
+        existingPath: saved.deviceImage ?? null,
+      })
+      setSaveStatus('success')
+      setSaveMessage('¡Guardado con éxito en Supabase! Ya está disponible en tiempo real.')
     } catch (error) {
-      setPublishStatus('error')
-      setPublishMessage(error instanceof Error ? error.message : 'Ocurrió un error al publicar.')
+      setSaveStatus('error')
+      setSaveMessage(error instanceof Error ? error.message : 'No se pudo guardar en Supabase.')
     }
   }
 
-  const isWorking = publishStatus === 'compressing' || publishStatus === 'uploading'
+  const isWorking = saveStatus === 'photos' || saveStatus === 'record'
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4">
@@ -754,15 +659,108 @@ export function AdminView({ editId }: AdminViewProps) {
           Volver al Catálogo
         </a>
 
-        <button
-          type="button"
-          onClick={() => setShowSettings(true)}
-          className="flex items-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-4 py-2.5 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan focus:outline-none focus-visible:ring-2 focus-visible:ring-fiber-cyan"
-        >
-          <Settings className="h-4 w-4" aria-hidden="true" />
-          Configuración GitHub
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {session ? (
+            <>
+              <span className="flex items-center gap-1.5 rounded-xl border border-fiber-emerald/30 bg-fiber-emerald/10 px-3 py-2 font-mono text-xs font-bold text-fiber-emerald">
+                <Cloud className="h-4 w-4" aria-hidden="true" />
+                <span className="max-w-[180px] truncate">{session.user.email ?? 'admin'}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
+                className="flex items-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-3 py-2 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-red-400/50 hover:text-red-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-fiber-cyan"
+              >
+                <LogOut className="h-4 w-4" aria-hidden="true" />
+                Salir
+              </button>
+            </>
+          ) : (
+            <span className="flex items-center gap-1.5 rounded-xl border border-fiber-border bg-fiber-card px-3 py-2 font-mono text-xs font-bold text-slate-400">
+              <CloudOff className="h-4 w-4" aria-hidden="true" />
+              Sin sesión
+            </span>
+          )}
+        </div>
       </div>
+
+      {!isSupabaseConfigured && (
+        <div className="flex items-start gap-2 rounded-2xl border border-fiber-amber/25 bg-fiber-amber/10 p-4 text-fiber-amber">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+          <div>
+            <p className="font-mono text-sm font-bold uppercase tracking-wide">
+              Supabase no configurado
+            </p>
+            <p className="mt-1 text-sm leading-relaxed">
+              Define <code className="font-mono">VITE_SUPABASE_URL</code> y{' '}
+              <code className="font-mono">VITE_SUPABASE_ANON_KEY</code> en{' '}
+              <code className="font-mono">.env</code> y vuelve a compilar. Mientras tanto, solo está
+              disponible el respaldo local.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {isSupabaseConfigured && authLoading && (
+        <div className="flex items-center gap-2 rounded-xl border border-fiber-border bg-fiber-card/60 px-3 py-2 font-mono text-xs text-slate-400">
+          <Loader2 className="h-3.5 w-3.5 animate-spin text-fiber-cyan" aria-hidden="true" />
+          Comprobando sesión…
+        </div>
+      )}
+
+      {isSupabaseConfigured && !authLoading && !session && (
+        <section className="hud-panel rounded-2xl border border-fiber-border bg-fiber-card p-4 shadow-card-glow">
+          <div className="flex items-center gap-2">
+            <LogIn className="h-5 w-5 text-fiber-cyan" aria-hidden="true" />
+            <h2 className="font-mono text-base font-bold uppercase tracking-wide text-slate-50">
+              Acceso administrador
+            </h2>
+          </div>
+          <p className="mt-1 text-sm leading-relaxed text-slate-400">
+            Inicia sesión con tu usuario de Supabase para guardar cambios y subir fotos. La lectura
+            del catálogo sigue siendo pública.
+          </p>
+          <form onSubmit={(event) => void handleSignIn(event)} className="mt-3 flex flex-col gap-3">
+            <Field label="Email" required>
+              <input
+                type="email"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                placeholder="admin@tu-dominio.com"
+                autoComplete="username"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Contraseña" required>
+              <input
+                type="password"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                className={inputClass}
+              />
+            </Field>
+            {authError && (
+              <p className="rounded-lg bg-red-500/15 px-3 py-2 text-sm font-medium text-red-400">
+                {authError}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={authSubmitting || authEmail.trim() === '' || authPassword === ''}
+              className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fiber-teal to-fiber-cyan px-5 font-mono text-sm font-bold uppercase tracking-wide text-fiber-dark shadow-cyan-glow transition-all duration-200 hover:from-fiber-cyan hover:to-fiber-teal disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {authSubmitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <LogIn className="h-4 w-4" aria-hidden="true" />
+              )}
+              Iniciar sesión
+            </button>
+          </form>
+        </section>
+      )}
 
       {/* Selector de modo */}
       <div className="flex flex-col gap-1.5">
@@ -779,12 +777,18 @@ export function AdminView({ editId }: AdminViewProps) {
           className={inputClass}
         >
           <option value="">+ Crear nueva ONU / Manual</option>
-          {ONUS.map((onu) => (
+          {onus.map((onu) => (
             <option key={onu.id} value={onu.id}>
               Editar: {onu.brand} {onu.model} ({onu.id})
             </option>
           ))}
         </select>
+        {catalogLoading && (
+          <p className="flex items-center gap-1.5 font-mono text-[11px] font-medium text-slate-500">
+            <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
+            Actualizando catálogo…
+          </p>
+        )}
       </div>
 
       {/* Datos principales */}
@@ -891,7 +895,7 @@ export function AdminView({ editId }: AdminViewProps) {
           <ImageDropzone
             title="🖥️ Captura de login"
             hint="Arrastra o selecciona la pantalla de login"
-            targetName={`images/onus/${currentId}-login.webp`}
+            targetName={`onu-images/${currentId}-login.webp`}
             slot={loginSlot}
             onFile={(file) => void processImage(file, setLoginSlot)}
             onClear={() => setLoginSlot(emptySlot())}
@@ -899,7 +903,7 @@ export function AdminView({ editId }: AdminViewProps) {
           <ImageDropzone
             title="📦 Foto física de la ONU"
             hint="Arrastra o selecciona una foto del equipo"
-            targetName={`images/onus/${currentId}-device.webp`}
+            targetName={`onu-images/${currentId}-device.webp`}
             slot={deviceSlot}
             onFile={(file) => void processImage(file, setDeviceSlot)}
             onClear={() => setDeviceSlot(emptySlot())}
@@ -1080,26 +1084,28 @@ export function AdminView({ editId }: AdminViewProps) {
 
       {/* Estado y acciones */}
       <section className="flex flex-col gap-3">
-        {publishStatus !== 'idle' && (
+        {saveStatus !== 'idle' && (
           <div
             className={`flex items-start gap-2 rounded-xl p-3 text-sm font-medium ${
-              publishStatus === 'success'
+              saveStatus === 'success'
                 ? 'bg-fiber-emerald/15 text-fiber-emerald'
-                : publishStatus === 'error'
+                : saveStatus === 'error'
                   ? 'bg-red-500/15 text-red-400'
                   : 'bg-fiber-cardHover text-slate-300'
             }`}
             role="status"
             aria-live="polite"
           >
-            {publishStatus === 'success' && (
+            {saveStatus === 'success' && (
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             )}
-            {publishStatus === 'error' && (
+            {saveStatus === 'error' && (
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             )}
-            {isWorking && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />}
-            <span>{publishMessage}</span>
+            {isWorking && (
+              <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />
+            )}
+            <span>{saveMessage}</span>
           </div>
         )}
 
@@ -1110,39 +1116,51 @@ export function AdminView({ editId }: AdminViewProps) {
           </p>
         )}
 
-        {/* Pestañas de acción */}
-        <div className="grid grid-cols-2 gap-1 rounded-xl border border-fiber-border bg-fiber-dark p-1">
-          <button
-            type="button"
-            onClick={() => setActionMode('manual')}
-            className={`min-h-[40px] rounded-lg px-2 font-mono text-xs font-bold uppercase tracking-wide transition-all duration-200 ${
-              actionMode === 'manual'
-                ? 'bg-fiber-teal text-fiber-dark shadow-cyan-glow'
-                : 'text-slate-500 hover:text-fiber-cyan'
-            }`}
-          >
-            Guardar local
-          </button>
-          <button
-            type="button"
-            onClick={() => setActionMode('advanced')}
-            className={`min-h-[40px] rounded-lg px-2 font-mono text-xs font-bold uppercase tracking-wide transition-all duration-200 ${
-              actionMode === 'advanced'
-                ? 'bg-fiber-teal text-fiber-dark shadow-cyan-glow'
-                : 'text-slate-500 hover:text-fiber-cyan'
-            }`}
-          >
-            Avanzado: Push por API
-          </button>
-        </div>
+        {isSupabaseConfigured && !session && (
+          <p className="font-mono text-xs font-medium text-fiber-amber">
+            Inicia sesión como administrador para guardar en Supabase.
+          </p>
+        )}
 
-        {actionMode === 'manual' ? (
-          <>
+        <button
+          type="button"
+          onClick={() => void handleSaveOnu()}
+          disabled={!requiredOk || isWorking || !session || !isSupabaseConfigured}
+          className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fiber-teal to-fiber-cyan px-5 font-mono text-base font-bold uppercase tracking-wide text-fiber-dark shadow-cyan-glow transition-all duration-200 hover:from-fiber-cyan hover:to-fiber-teal active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {isWorking ? (
+            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Cloud className="h-5 w-5" aria-hidden="true" />
+          )}
+          {isWorking
+            ? saveStatus === 'photos'
+              ? 'Subiendo fotos…'
+              : 'Guardando registro…'
+            : editingId
+              ? 'Actualizar ONU en Supabase'
+              : 'Guardar ONU en Supabase'}
+        </button>
+
+        {saveStatus === 'success' && (
+          <a
+            href="#/"
+            className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-fiber-emerald/40 bg-fiber-emerald/10 px-5 font-mono text-sm font-bold text-fiber-emerald transition-colors hover:bg-fiber-emerald/20"
+          >
+            Ver catálogo actualizado
+          </a>
+        )}
+
+        <div className="rounded-xl border border-fiber-border bg-fiber-card/40 p-3">
+          <p className="mb-2 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+            Respaldo local (opcional)
+          </p>
+          <div className="flex flex-col gap-2">
             <button
               type="button"
               onClick={handleDownloadFile}
               disabled={!requiredOk}
-              className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fiber-teal to-fiber-cyan px-5 font-mono text-base font-bold uppercase tracking-wide text-fiber-dark shadow-cyan-glow transition-all duration-200 hover:from-fiber-cyan hover:to-fiber-teal active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-4 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span aria-hidden="true">💾</span>
               Descargar archivo onus.ts
@@ -1150,60 +1168,21 @@ export function AdminView({ editId }: AdminViewProps) {
 
             <button
               type="button"
-              onClick={handleCopyPrompt}
+              onClick={() => void handleCopyPrompt()}
               disabled={!requiredOk}
-              className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-5 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-4 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span aria-hidden="true">{promptCopied ? '✅' : '📋'}</span>
               {promptCopied ? 'Prompt copiado' : 'Copiar Código para OpenCode'}
             </button>
-
-            <p className="font-mono text-xs leading-relaxed text-slate-500">
-              Reemplaza <code className="font-mono text-fiber-cyan/90">src/data/onus.ts</code> con el archivo
-              descargado y haz push. Si subiste imágenes nuevas, descárgalas desde cada miniatura y
-              guárdalas en <code className="font-mono text-fiber-cyan/90">public/images/onus/</code>.
-            </p>
-          </>
-        ) : (
-          <>
-            {!isConfigComplete(config) && (
-              <div className="flex items-start gap-2 rounded-xl border border-fiber-amber/25 bg-fiber-amber/10 p-3 text-fiber-amber">
-                <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-                <p className="text-sm font-medium">
-                  El push directo necesita un token de GitHub. Si prefieres no configurarlo, usa la
-                  pestaña “Guardar local”.
-                </p>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handlePublish}
-              disabled={!requiredOk || isWorking}
-              className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fiber-teal to-fiber-cyan px-5 font-mono text-base font-bold uppercase tracking-wide text-fiber-dark shadow-cyan-glow transition-all duration-200 hover:from-fiber-cyan hover:to-fiber-teal active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isWorking ? (
-                <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-              ) : (
-                <span aria-hidden="true">{editingId ? '✏️' : '🚀'}</span>
-              )}
-              {editingId ? 'Actualizar en GitHub' : 'Publicar en GitHub'}
-            </button>
-
-            <p className="font-mono text-xs leading-relaxed text-slate-500">
-              Sube las imágenes y hace commit directo en <code className="font-mono text-fiber-cyan/90">{config.branch || 'main'}</code>.
-            </p>
-          </>
-        )}
+          </div>
+          <p className="mt-2 font-mono text-[11px] leading-relaxed text-slate-500">
+            Los cambios principales se guardan en Supabase. Este respaldo sirve para reemplazar{' '}
+            <code className="font-mono text-fiber-cyan/90">src/data/onus.ts</code> si necesitas
+            volver al modo estático.
+          </p>
+        </div>
       </section>
-
-      {showSettings && (
-        <SettingsModal
-          config={config}
-          onChange={setConfig}
-          onClose={() => setShowSettings(false)}
-        />
-      )}
     </div>
   )
 }

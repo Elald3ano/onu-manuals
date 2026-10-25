@@ -1,2 +1,2 @@
-export { ONUS, getOnuById } from './onus'
+export { ONUS, INITIAL_ONUS, getOnuById } from './onus'
 export type { ONU, ManualStep, LegacyManualLink } from '../types/onu'

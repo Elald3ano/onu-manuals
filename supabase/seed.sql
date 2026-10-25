@@ -1,0 +1,252 @@
+-- =============================================================================
+-- onu-manuals · Seed del catálogo actual (16 ONUs)
+-- Idempotente: se puede ejecutar varias veces.
+-- Ejecutar DESPUÉS de schema.sql en el SQL Editor de Supabase.
+--
+-- Nota: este seed conserva las rutas locales de las imágenes (public/images/onus/...).
+-- Para subir las fotos al bucket y guardar URLs públicas usa:
+--   npm run seed:supabase
+-- =============================================================================
+
+insert into public.onus (
+  id, brand, model, aliases, default_ip, username, password,
+  login_ui_image, device_image, legacy_manuals, interactive_manual, notes
+)
+values
+(
+  'kingtype-cusa',
+  'KingType',
+  'CUSA',
+  array[]::text[],
+  '',
+  'super',
+  'kingT#92Su',
+  'images/onus/kingtype-cusa-login.png',
+  null,
+  '[{"label":"Manual 1","url":"https://drive.google.com/file/d/1VuWn0befwkypJfhRWBTIwh7lWXCiKusT/view?usp=sharing"},{"label":"Manual 2","url":"https://drive.google.com/file/d/1blOMPxZcMBC22aCQinHudCeZJmQNy4lW/view?usp=sharing"}]'::jsonb,
+  null,
+  null
+),
+(
+  'bestcom-cdata-fenix',
+  'Bestcom',
+  'Genérico',
+  array['cdata', 'Fenix']::text[],
+  '',
+  'adminisp',
+  'adminisp',
+  'images/onus/bestcom-cdata-fenix-login.png',
+  null,
+  '[{"label":"Manual","url":"https://drive.google.com/file/d/1XPhM3z6nKVIxWTRv-gVAmazEeylBhrWO/view?usp=sharing"}]'::jsonb,
+  null,
+  null
+),
+(
+  'easy4link',
+  'EASY4LINK',
+  'Genérico',
+  array[]::text[],
+  '',
+  'adminisp',
+  'adminisp',
+  'images/onus/easy4link-login.png',
+  null,
+  '[{"label":"Manual","url":"https://drive.google.com/file/d/1ZHylwoaM78zMjN8QRAk_m9o8GLp3PuTJ/view?usp=sharing"}]'::jsonb,
+  null,
+  null
+),
+(
+  'bdcom',
+  'BDCOM',
+  'Genérico',
+  array[]::text[],
+  '',
+  'admin',
+  'super&123',
+  'images/onus/bdcom-login.png',
+  null,
+  '[{"label":"Manual","url":"https://drive.google.com/file/d/166J6E4dFkz94ZeZCdCgGPv8vqql8r7x9/view?usp=sharing"}]'::jsonb,
+  null,
+  'La contraseña contiene el carácter "&".'
+),
+(
+  'optitimes',
+  'OPTITIMES',
+  'Genérico',
+  array[]::text[],
+  '',
+  'admin',
+  'Admin123!',
+  'images/onus/optitimes-login.png',
+  null,
+  '[{"label":"Manual","url":"https://drive.google.com/file/d/13SyFvLM4KhBZw7D7-9Oh6sZK6QZN5KTf/view?usp=sharing"}]'::jsonb,
+  null,
+  null
+),
+(
+  'generico-xpon',
+  'Genérico',
+  'Genérico',
+  array[]::text[],
+  '',
+  'Admin',
+  'Admin123!',
+  'images/onus/generico-xpon-login.png',
+  null,
+  '[]'::jsonb,
+  null,
+  'Marca no especificada en el documento fuente (login genérico "Welcome to XPON ONU").'
+),
+(
+  'generico-system',
+  'Genérico',
+  'Genérico',
+  array[]::text[],
+  '',
+  'admin',
+  'system',
+  'images/onus/generico-system-login.png',
+  null,
+  '[{"label":"Manual","url":"https://drive.google.com/file/d/1U9Kgt-udCqqhy8Yl5qdHtRZWFJAmLlBn/view?usp=sharing"}]'::jsonb,
+  null,
+  'Marca no especificada en el documento fuente (login genérico "XPON ONU").'
+),
+(
+  'generico-ont-4ge-rfdw',
+  'Genérico',
+  'ONT-4GE-RFDW',
+  array[]::text[],
+  '',
+  'admin',
+  'Admin123!',
+  'images/onus/generico-ont-4ge-rfdw-login.png',
+  null,
+  '[]'::jsonb,
+  null,
+  null
+),
+(
+  'generico-system-2',
+  'Genérico',
+  'Genérico',
+  array[]::text[],
+  '',
+  'admin',
+  'system',
+  'images/onus/generico-system-2-login.png',
+  null,
+  '[{"label":"Manual","url":"https://drive.google.com/file/d/1Qq-PmB_F1OXyr0oZmvgyfx7t_kmvcTwD/view?usp=sharing"}]'::jsonb,
+  null,
+  'Marca no especificada en el documento fuente (login genérico "Input username and password").'
+),
+(
+  'connet',
+  'CONNET',
+  'Genérico',
+  array[]::text[],
+  '',
+  'admin',
+  'admin',
+  'images/onus/connet-login.png',
+  null,
+  '[]'::jsonb,
+  null,
+  null
+),
+(
+  'vsol',
+  'VSOL',
+  'Genérico',
+  array[]::text[],
+  '',
+  'admin',
+  'Admin123!',
+  'images/onus/vsol-login.png',
+  null,
+  '[{"label":"Manual 1","url":"https://drive.google.com/file/d/1vkLfp-O3dx_NV2FgchY7CL2TWaOVsWxT/view?usp=sharing"},{"label":"Manual 2","url":"https://drive.google.com/file/d/1E2WGZv8jB2_D5Gmeyi9jhqHVGz8IkR3k/view?usp=sharing"}]'::jsonb,
+  '[{"stepNumber":1,"title":"Conectar el equipo","description":"Conecta la ONU a la fuente de alimentación y el cable de fibra óptica. Espera a que el LED PON se estabilice.","checklist":["Conectar la alimentación","Conectar el cable de fibra óptica","Verificar el LED PON encendido"]},{"stepNumber":2,"title":"Acceder a la interfaz web","description":"Conecta tu laptop al puerto LAN1 y abre la IP de gestión en el navegador. Ingresa con las credenciales indicadas.","screenshot":"images/onus/vsol-login.png","checklist":["Conectar el cable LAN1","Abrir la IP de gestión en el navegador","Ingresar usuario y contraseña"]},{"stepNumber":3,"title":"Configurar la conexión WAN","description":"Según el servicio contratado (PPPoE o IPoE), configura los parámetros WAN que entrega el ISP.","checklist":["Seleccionar el tipo de conexión","Ingresar la VLAN del servicio","Guardar y aplicar los cambios"]},{"stepNumber":4,"title":"Configurar la red WiFi","description":"Define el SSID y una contraseña WiFi segura para el cliente.","checklist":["Cambiar el nombre de la red (SSID)","Definir una contraseña segura","Guardar los cambios"]},{"stepNumber":5,"title":"Verificar el servicio","description":"Comprueba que el equipo navega y que el estado de los LEDs es correcto antes de cerrar la instalación.","checklist":["Verificar que el LED LOS esté apagado","Probar la navegación","Registrar la instalación"]}]'::jsonb,
+  null
+),
+(
+  'generico-admin',
+  'Genérico',
+  'Genérico',
+  array[]::text[],
+  '',
+  'admin',
+  'admin',
+  'images/onus/generico-admin-login.png',
+  null,
+  '[]'::jsonb,
+  null,
+  'Marca no especificada en el documento fuente (login genérico "Username / Password").'
+),
+(
+  'generico-admin-2',
+  'Genérico',
+  'Genérico',
+  array[]::text[],
+  '',
+  'admin',
+  'admin',
+  'images/onus/generico-admin-2-login.png',
+  null,
+  '[]'::jsonb,
+  null,
+  'Marca no especificada en el documento fuente (login genérico "Administrator / Language / Reset").'
+),
+(
+  'latic',
+  'LATIC',
+  'Genérico',
+  array[]::text[],
+  '',
+  'Administrador',
+  'ltc753aa',
+  'images/onus/latic-login.png',
+  null,
+  '[{"label":"Manual","url":"https://drive.google.com/file/d/1ep7iFY90hmQFdXAWjMQ0DZPcCWqq0HaV/view?usp=sharing"}]'::jsonb,
+  null,
+  null
+),
+(
+  'supreme',
+  'SUPREME',
+  'Genérico',
+  array[]::text[],
+  '',
+  'adminisp',
+  'adminisp',
+  'images/onus/supreme-login.png',
+  null,
+  '[{"label":"Manual","url":"https://drive.google.com/file/d/1Xs_Lpzf0s5pSOC4riA4gt1eKwI1wJKbh/view?usp=drive_link"}]'::jsonb,
+  null,
+  null
+),
+(
+  'fiber-home',
+  'FiberHome',
+  'Genérico',
+  array[]::text[],
+  '',
+  'AdminFHome',
+  'Admin@Fhome',
+  'images/onus/fiber-home-login.png',
+  'images/onus/fiber-home-device.webp',
+  '[{"label":"Manual","url":"https://drive.google.com/file/d/15KMWQzh3O6VcvVBLx6xqE0K8alQ-6EK6/view?usp=drive_link"}]'::jsonb,
+  null,
+  null
+)
+on conflict (id) do update set
+  brand              = excluded.brand,
+  model              = excluded.model,
+  aliases            = excluded.aliases,
+  default_ip         = excluded.default_ip,
+  username           = excluded.username,
+  password           = excluded.password,
+  login_ui_image     = excluded.login_ui_image,
+  device_image       = excluded.device_image,
+  legacy_manuals     = excluded.legacy_manuals,
+  interactive_manual = excluded.interactive_manual,
+  notes              = excluded.notes,
+  updated_at         = now();
