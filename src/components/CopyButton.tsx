@@ -48,11 +48,11 @@ export function CopyButton({
       onClick={handleClick}
       aria-label={copied ? 'Copiado al portapapeles' : (ariaLabel ?? 'Copiar al portapapeles')}
       className={[
-        'inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-xl px-3 text-sm font-bold transition-colors duration-150',
-        'focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900',
+        'inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-xl border px-3 font-mono text-[13px] font-bold transition-all duration-150',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-fiber-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-fiber-dark',
         copied
-          ? 'bg-emerald-600 text-white'
-          : 'bg-slate-700 text-slate-100 hover:bg-slate-600 active:bg-slate-600',
+          ? 'border-fiber-emerald bg-fiber-emerald text-fiber-dark shadow-cyan-glow'
+          : 'border-fiber-border bg-fiber-card text-slate-300 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan active:bg-fiber-cardHover',
         className,
       ].join(' ')}
     >

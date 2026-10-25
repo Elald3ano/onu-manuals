@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent, DragEvent, ReactNode } from 'react'
+import type { ChangeEvent, Dispatch, DragEvent, ReactNode, SetStateAction } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -15,6 +15,7 @@ import {
 import type { ONU, LegacyManualLink, ManualStep } from '../types/onu'
 import { getOnuById, ONUS } from '../data/onus'
 import { compressImage } from '../utils/imageCompressor'
+import { serializeOnusFile } from '../utils/onusSerializer'
 import {
   isConfigComplete,
   loadConfig,
@@ -27,6 +28,7 @@ import {
 import { copyText } from '../utils/clipboard'
 
 type PublishStatus = 'idle' | 'compressing' | 'uploading' | 'success' | 'error'
+type ActionMode = 'manual' | 'advanced'
 
 interface ManualDraft {
   label: string
@@ -39,8 +41,21 @@ interface StepDraft {
   checklistText: string
 }
 
+interface ImageSlot {
+  file: File | null
+  blob: Blob | null
+  preview: string | null
+  sizeKb: number | null
+  error: string | null
+  existingPath: string | null
+}
+
 const inputClass =
-  'w-full rounded-xl border border-slate-700 bg-slate-900/60 px-3 py-2.5 text-base text-slate-100 placeholder:text-slate-500 focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/40'
+  'w-full rounded-xl border border-fiber-border bg-fiber-dark/60 px-3 py-2.5 font-mono text-base text-slate-100 placeholder:text-slate-500 transition-colors focus:border-fiber-teal focus:outline-none focus:ring-2 focus:ring-fiber-teal/30'
+
+function emptySlot(): ImageSlot {
+  return { file: null, blob: null, preview: null, sizeKb: null, error: null, existingPath: null }
+}
 
 function slugify(text: string): string {
   return text
@@ -65,6 +80,17 @@ function parseLines(text: string): string[] {
     .filter(Boolean)
 }
 
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
+  URL.revokeObjectURL(url)
+}
+
 function Field({
   label,
   required,
@@ -76,12 +102,118 @@ function Field({
 }) {
   return (
     <label className="flex flex-col gap-1.5">
-      <span className="text-xs font-bold uppercase tracking-wide text-slate-400">
+      <span className="font-mono text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
         {label}
         {required && <span className="text-red-400"> *</span>}
       </span>
       {children}
     </label>
+  )
+}
+
+function ImageDropzone({
+  title,
+  hint,
+  targetName,
+  slot,
+  onFile,
+  onClear,
+}: {
+  title: string
+  hint: string
+  targetName: string
+  slot: ImageSlot
+  onFile: (file: File) => void
+  onClear: () => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const blob = slot.blob
+
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    setDragging(false)
+    const file = event.dataTransfer.files?.[0]
+    if (file) onFile(file)
+  }
+
+  const handleInput = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) onFile(file)
+    event.target.value = ''
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="font-mono text-xs font-bold uppercase tracking-[0.14em] text-slate-500">{title}</p>
+
+      {slot.preview ? (
+        <>
+          <div className="relative overflow-hidden rounded-xl border border-fiber-border bg-fiber-dark">
+            <img src={slot.preview} alt={title} className="h-36 w-full object-contain" />
+            <button
+              type="button"
+              onClick={onClear}
+              aria-label={`Quitar ${title}`}
+              className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full border border-fiber-border bg-fiber-dark/80 text-slate-100 backdrop-blur transition-colors hover:border-fiber-teal/60 hover:bg-fiber-cardHover"
+            >
+              <X className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="absolute bottom-2 right-2 rounded-lg border border-fiber-border bg-fiber-dark/80 px-2 py-1 font-mono text-[11px] font-bold text-slate-100 backdrop-blur transition-colors hover:border-fiber-teal/60 hover:bg-fiber-cardHover"
+            >
+              Reemplazar
+            </button>
+          </div>
+          <p className="font-mono text-[11px] font-medium text-slate-400">
+            {slot.sizeKb !== null ? `Comprimido: ${slot.sizeKb} KB en WebP` : 'Imagen actual'}
+            {slot.file ? ' · nueva' : ''}
+          </p>
+          <p className="font-mono text-[11px] text-slate-500">
+            Se guardará como <code className="font-mono text-fiber-cyan/90">{targetName}</code>
+          </p>
+          {blob && (
+            <button
+              type="button"
+              onClick={() => downloadBlob(blob, targetName.split('/').pop() ?? 'imagen.webp')}
+              className="w-fit rounded-lg border border-fiber-border px-2 py-1 font-mono text-[11px] font-bold text-slate-300 transition-colors hover:border-fiber-teal/60 hover:text-fiber-cyan"
+            >
+              ⬇ Descargar .webp
+            </button>
+          )}
+        </>
+      ) : (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => inputRef.current?.click()}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click()
+          }}
+          onDragOver={(event) => {
+            event.preventDefault()
+            setDragging(true)
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={handleDrop}
+          className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+            dragging
+              ? 'border-fiber-cyan bg-fiber-teal/10 shadow-cyan-glow'
+              : 'border-fiber-border bg-fiber-dark/40 hover:border-fiber-teal/60'
+          }`}
+        >
+          <ImagePlus className="h-7 w-7 text-fiber-teal/60" aria-hidden="true" />
+          <p className="font-mono text-xs font-semibold text-slate-300">{hint}</p>
+          <p className="font-mono text-[11px] text-slate-500">PNG / JPG · se optimiza a WebP</p>
+        </div>
+      )}
+
+      <input ref={inputRef} type="file" accept="image/*" onChange={handleInput} className="hidden" />
+
+      {slot.error && <p className="text-xs font-medium text-red-400">{slot.error}</p>}
+    </div>
   )
 }
 
@@ -123,7 +255,7 @@ function SettingsModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/70 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-fiber-dark/85 p-0 backdrop-blur-sm sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
@@ -131,27 +263,27 @@ function SettingsModal({
         aria-modal="true"
         aria-label="Configuración de GitHub"
         onClick={(event) => event.stopPropagation()}
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-slate-700 bg-slate-800 p-5 shadow-2xl sm:rounded-2xl"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl border border-fiber-border bg-fiber-card p-5 shadow-cyan-glow sm:rounded-2xl"
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <Settings className="h-5 w-5 text-primary-300" aria-hidden="true" />
-            <h2 className="text-base font-bold text-slate-50">Configuración de GitHub</h2>
+            <Settings className="h-5 w-5 text-fiber-cyan" aria-hidden="true" />
+            <h2 className="font-mono text-base font-bold uppercase tracking-wide text-slate-50">Configuración de GitHub</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Cerrar configuración"
-            className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-700 hover:text-slate-100"
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-fiber-cardHover hover:text-fiber-cyan"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
 
         <p className="mb-4 text-xs leading-relaxed text-slate-400">
-          El token se guarda solo en este dispositivo (localStorage). Requiere permiso{' '}
-          <code className="text-slate-300">repo</code> o{' '}
-          <code className="text-slate-300">contents:write</code>.
+          Opcional: solo necesaria para el push directo por API. El token se guarda solo en este
+          dispositivo (localStorage) y requiere permiso <code className="font-mono text-fiber-cyan/90">repo</code>{' '}
+          o <code className="font-mono text-fiber-cyan/90">contents:write</code>.
         </p>
 
         <div className="flex flex-col gap-3">
@@ -204,7 +336,7 @@ function SettingsModal({
           <div
             className={`mt-3 rounded-xl p-3 text-sm font-medium ${
               testResult.ok
-                ? 'bg-success-600/15 text-success-400'
+                ? 'bg-fiber-emerald/15 text-fiber-emerald'
                 : 'bg-red-500/15 text-red-400'
             }`}
           >
@@ -217,17 +349,15 @@ function SettingsModal({
             type="button"
             onClick={handleTest}
             disabled={testing || !isConfigComplete(config)}
-            className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-4 text-sm font-bold text-slate-100 transition-colors hover:border-slate-500 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-4 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {testing ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            ) : null}
+            {testing ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
             Probar conexión
           </button>
           <button
             type="button"
             onClick={handleSave}
-            className="flex min-h-[44px] items-center justify-center rounded-xl bg-primary-600 px-5 text-sm font-bold text-white transition-colors hover:bg-primary-500"
+            className="flex min-h-[44px] items-center justify-center rounded-xl bg-gradient-to-r from-fiber-teal to-fiber-cyan px-5 font-mono text-sm font-bold uppercase tracking-wide text-fiber-dark shadow-cyan-glow transition-all duration-200 hover:from-fiber-cyan hover:to-fiber-teal"
           >
             Guardar
           </button>
@@ -245,7 +375,9 @@ export function AdminView({ editId }: AdminViewProps) {
   const [config, setConfig] = useState<GithubConfig>(() => loadConfig())
   const [showSettings, setShowSettings] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [existingImagePath, setExistingImagePath] = useState<string | null>(null)
+
+  const [loginSlot, setLoginSlot] = useState<ImageSlot>(emptySlot)
+  const [deviceSlot, setDeviceSlot] = useState<ImageSlot>(emptySlot)
 
   const [brand, setBrand] = useState('')
   const [model, setModel] = useState('')
@@ -257,35 +389,28 @@ export function AdminView({ editId }: AdminViewProps) {
   const [password, setPassword] = useState('')
   const [notes, setNotes] = useState('')
 
-  const [manuals, setManuals] = useState<ManualDraft[]>([{ label: 'Manual 1', url: '' }])
+  const [manuals, setManuals] = useState<ManualDraft[]>([{ label: '', url: '' }])
 
   const [enableChecklist, setEnableChecklist] = useState(false)
   const [steps, setSteps] = useState<StepDraft[]>([
     { title: '', description: '', checklistText: '' },
   ])
 
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [imageSizeKb, setImageSizeKb] = useState<number | null>(null)
-  const [imageError, setImageError] = useState<string | null>(null)
-  const [isDragging, setIsDragging] = useState(false)
-
+  const [actionMode, setActionMode] = useState<ActionMode>('manual')
   const [publishStatus, setPublishStatus] = useState<PublishStatus>('idle')
   const [publishMessage, setPublishMessage] = useState('')
-  const [jsonCopied, setJsonCopied] = useState(false)
+  const [promptCopied, setPromptCopied] = useState(false)
 
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const jsonTimerRef = useRef<number | null>(null)
+  const promptTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     return () => {
-      if (jsonTimerRef.current !== null) window.clearTimeout(jsonTimerRef.current)
+      if (promptTimerRef.current !== null) window.clearTimeout(promptTimerRef.current)
     }
   }, [])
 
   const resetForm = () => {
     setEditingId(null)
-    setExistingImagePath(null)
     setBrand('')
     setModel('')
     setAliasesText('')
@@ -295,13 +420,11 @@ export function AdminView({ editId }: AdminViewProps) {
     setUsername('')
     setPassword('')
     setNotes('')
-    setManuals([{ label: 'Manual 1', url: '' }])
+    setManuals([{ label: '', url: '' }])
     setEnableChecklist(false)
     setSteps([{ title: '', description: '', checklistText: '' }])
-    setImageFile(null)
-    setImagePreview(null)
-    setImageSizeKb(null)
-    setImageError(null)
+    setLoginSlot(emptySlot())
+    setDeviceSlot(emptySlot())
     setPublishStatus('idle')
     setPublishMessage('')
   }
@@ -322,7 +445,7 @@ export function AdminView({ editId }: AdminViewProps) {
     setManuals(
       legacyManuals.length > 0
         ? legacyManuals.map((manual) => ({ label: manual.label, url: manual.url }))
-        : [{ label: 'Manual 1', url: '' }],
+        : [{ label: '', url: '' }],
     )
 
     const hasSteps = Boolean(onu.interactiveManual && onu.interactiveManual.length > 0)
@@ -337,11 +460,23 @@ export function AdminView({ editId }: AdminViewProps) {
         : [{ title: '', description: '', checklistText: '' }],
     )
 
-    setImageFile(null)
-    setExistingImagePath(onu.loginUiImage || null)
-    setImagePreview(onu.loginUiImage || null)
-    setImageSizeKb(null)
-    setImageError(null)
+    setLoginSlot({
+      file: null,
+      blob: null,
+      preview: onu.loginUiImage || null,
+      sizeKb: null,
+      error: null,
+      existingPath: onu.loginUiImage || null,
+    })
+    setDeviceSlot({
+      file: null,
+      blob: null,
+      preview: onu.deviceImage || null,
+      sizeKb: null,
+      error: null,
+      existingPath: onu.deviceImage || null,
+    })
+
     setPublishStatus('idle')
     setPublishMessage('')
   }
@@ -351,12 +486,45 @@ export function AdminView({ editId }: AdminViewProps) {
       const onu = getOnuById(editId)
       if (onu) loadOnu(onu)
     }
-    // Solo reaccionamos al cambio del parámetro de la URL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editId])
 
+  const processImage = async (file: File, setSlot: Dispatch<SetStateAction<ImageSlot>>) => {
+    if (!file.type.startsWith('image/')) {
+      setSlot((prev) => ({ ...prev, error: 'El archivo seleccionado no es una imagen.' }))
+      return
+    }
+    try {
+      const compressed = await compressImage(file)
+      setSlot((prev) => ({
+        ...prev,
+        file,
+        blob: compressed.blob,
+        preview: compressed.previewUrl,
+        sizeKb: compressed.sizeKb,
+        error: null,
+      }))
+    } catch {
+      setSlot((prev) => ({ ...prev, error: 'No se pudo procesar la imagen.' }))
+    }
+  }
+
+  const currentId = slug.trim() || slugify(`${brand}-${model}`) || 'nueva-onu'
+
+  const manualRowsValid = manuals.every((manual) => {
+    const label = manual.label.trim()
+    const url = manual.url.trim()
+    if (label === '' && url === '') return true
+    if (label === '' || url === '') return false
+    return /^https?:\/\//i.test(url)
+  })
+
   const requiredOk =
-    brand.trim() !== '' && model.trim() !== '' && username.trim() !== '' && password.trim() !== ''
+    brand.trim() !== '' &&
+    model.trim() !== '' &&
+    username.trim() !== '' &&
+    password.trim() !== '' &&
+    manualRowsValid
 
   const handleModeChange = (value: string) => {
     if (value === '') {
@@ -382,43 +550,6 @@ export function AdminView({ editId }: AdminViewProps) {
     setSlug(value)
   }
 
-  const handleFile = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      setImageError('El archivo seleccionado no es una imagen.')
-      return
-    }
-    setImageError(null)
-    try {
-      const compressed = await compressImage(file)
-      setImageFile(file)
-      setImagePreview(compressed.previewUrl)
-      setImageSizeKb(compressed.sizeKb)
-    } catch {
-      setImageError('No se pudo procesar la imagen.')
-    }
-  }
-
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    setIsDragging(false)
-    const file = event.dataTransfer.files?.[0]
-    if (file) void handleFile(file)
-  }
-
-  const handleFileInput = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (file) void handleFile(file)
-    event.target.value = ''
-  }
-
-  const clearImage = () => {
-    setImageFile(null)
-    setImagePreview(null)
-    setImageSizeKb(null)
-    setImageError(null)
-    setExistingImagePath(null)
-  }
-
   const addManual = () => setManuals((prev) => [...prev, { label: '', url: '' }])
 
   const updateManual = (index: number, patch: Partial<ManualDraft>) => {
@@ -429,7 +560,8 @@ export function AdminView({ editId }: AdminViewProps) {
     setManuals((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const addStep = () => setSteps((prev) => [...prev, { title: '', description: '', checklistText: '' }])
+  const addStep = () =>
+    setSteps((prev) => [...prev, { title: '', description: '', checklistText: '' }])
 
   const updateStep = (index: number, patch: Partial<StepDraft>) => {
     setSteps((prev) => prev.map((step, i) => (i === index ? { ...step, ...patch } : step)))
@@ -457,7 +589,7 @@ export function AdminView({ editId }: AdminViewProps) {
 
     const legacyManuals: LegacyManualLink[] = manuals
       .map((manual) => ({ label: manual.label.trim(), url: manual.url.trim() }))
-      .filter((manual) => manual.url !== '')
+      .filter((manual) => manual.label !== '' && manual.url !== '')
 
     const interactiveManual: ManualStep[] | undefined = enableChecklist
       ? steps
@@ -470,6 +602,10 @@ export function AdminView({ editId }: AdminViewProps) {
           .filter((step) => step.title !== '')
       : undefined
 
+    const deviceImage = deviceSlot.file
+      ? `images/onus/${id}-device.webp`
+      : (deviceSlot.existingPath ?? undefined)
+
     return {
       id,
       brand: trimmedBrand,
@@ -477,7 +613,10 @@ export function AdminView({ editId }: AdminViewProps) {
       aliases: parseList(aliasesText),
       defaultIp: defaultIp.trim(),
       credentials: { username: trimmedUsername, password },
-      loginUiImage: imageFile ? `images/onus/${id}-login.webp` : (existingImagePath ?? ''),
+      loginUiImage: loginSlot.file
+        ? `images/onus/${id}-login.webp`
+        : (loginSlot.existingPath ?? ''),
+      deviceImage,
       legacyManuals: legacyManuals.length > 0 ? legacyManuals : undefined,
       interactiveManual:
         interactiveManual && interactiveManual.length > 0 ? interactiveManual : undefined,
@@ -485,27 +624,72 @@ export function AdminView({ editId }: AdminViewProps) {
     }
   }
 
-  const handleCopyJson = async () => {
+  const handleDownloadFile = () => {
     const onu = buildOnu()
     if (!onu) {
       setPublishStatus('error')
-      setPublishMessage('Completa los campos obligatorios: Marca, Modelo, Usuario y Contraseña.')
+      setPublishMessage(
+        'Completa Marca, Modelo, Usuario, Contraseña y revisa los enlaces de manual (Etiqueta + URL).',
+      )
       return
     }
 
-    const ok = await copyText(JSON.stringify(onu, null, 2))
-    if (!ok) return
+    const updated = editingId
+      ? ONUS.map((existing) => (existing.id === editingId ? onu : existing))
+      : [...ONUS, onu]
 
-    setJsonCopied(true)
-    if (jsonTimerRef.current !== null) window.clearTimeout(jsonTimerRef.current)
-    jsonTimerRef.current = window.setTimeout(() => setJsonCopied(false), 1800)
+    downloadBlob(
+      new Blob([serializeOnusFile(updated)], { type: 'text/plain;charset=utf-8' }),
+      'onus.ts',
+    )
+
+    setPublishStatus('success')
+    setPublishMessage(
+      'onus.ts descargado. Reemplaza src/data/onus.ts con este archivo y haz push. Si subiste imágenes nuevas, descárgalas y guárdalas en public/images/onus/.',
+    )
+  }
+
+  const handleCopyPrompt = async () => {
+    const onu = buildOnu()
+    if (!onu) {
+      setPublishStatus('error')
+      setPublishMessage(
+        'Completa Marca, Modelo, Usuario, Contraseña y revisa los enlaces de manual (Etiqueta + URL).',
+      )
+      return
+    }
+
+    const prompt = [
+      'Actualiza esta ONU en onus.ts y haz push.',
+      '',
+      'Inserta o reemplaza el siguiente objeto dentro del arreglo ONUS de src/data/onus.ts:',
+      '',
+      '```ts',
+      JSON.stringify(onu, null, 2),
+      '```',
+      '',
+    ].join('\n')
+
+    const ok = await copyText(prompt)
+    if (!ok) {
+      setPublishStatus('error')
+      setPublishMessage('No se pudo copiar al portapapeles.')
+      return
+    }
+
+    setPromptCopied(true)
+    if (promptTimerRef.current !== null) window.clearTimeout(promptTimerRef.current)
+    promptTimerRef.current = window.setTimeout(() => setPromptCopied(false), 2500)
+
+    setPublishStatus('success')
+    setPublishMessage('Prompt copiado. Pégalo en OpenCode para actualizar onus.ts y hacer push.')
   }
 
   const handlePublish = async () => {
     const onu = buildOnu()
     if (!onu) {
       setPublishStatus('error')
-      setPublishMessage('Completa los campos obligatorios: Marca, Modelo, Usuario y Contraseña.')
+      setPublishMessage('Completa los campos obligatorios y revisa los enlaces de manual.')
       return
     }
 
@@ -515,26 +699,33 @@ export function AdminView({ editId }: AdminViewProps) {
       return
     }
 
-    // Aseguramos que el publicador lea la configuración actual desde localStorage.
     saveConfig(config)
 
     try {
-      let imageBase64: string | undefined
+      let loginBase64: string | undefined
+      let deviceBase64: string | undefined
 
-      if (imageFile) {
+      if (loginSlot.file) {
         setPublishStatus('compressing')
-        setPublishMessage('Comprimiendo imagen...')
-        const compressed = await compressImage(imageFile)
-        imageBase64 = compressed.base64
+        setPublishMessage('Comprimiendo imagen de interfaz...')
+        loginBase64 = (await compressImage(loginSlot.file)).base64
+      }
+
+      if (deviceSlot.file) {
+        setPublishStatus('compressing')
+        setPublishMessage('Comprimiendo foto del equipo...')
+        deviceBase64 = (await compressImage(deviceSlot.file)).base64
       }
 
       setPublishStatus('uploading')
       setPublishMessage('Subiendo a GitHub...')
 
+      const images = { login: loginBase64, device: deviceBase64 }
+
       if (editingId) {
-        await updateExistingOnu(onu, imageBase64)
+        await updateExistingOnu(onu, images)
       } else {
-        await publishNewOnu(onu, imageBase64)
+        await publishNewOnu(onu, images)
       }
 
       setPublishStatus('success')
@@ -549,7 +740,7 @@ export function AdminView({ editId }: AdminViewProps) {
     }
   }
 
-  const isPublishing = publishStatus === 'compressing' || publishStatus === 'uploading'
+  const isWorking = publishStatus === 'compressing' || publishStatus === 'uploading'
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4">
@@ -557,7 +748,7 @@ export function AdminView({ editId }: AdminViewProps) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <a
           href="#/"
-          className="flex w-fit items-center gap-2 rounded-xl bg-slate-800 px-4 py-2.5 text-sm font-bold text-slate-100 transition-colors hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+          className="flex w-fit items-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-4 py-2.5 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan focus:outline-none focus-visible:ring-2 focus-visible:ring-fiber-cyan"
         >
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Volver al Catálogo
@@ -566,7 +757,7 @@ export function AdminView({ editId }: AdminViewProps) {
         <button
           type="button"
           onClick={() => setShowSettings(true)}
-          className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-800 px-4 py-2.5 text-sm font-bold text-slate-100 transition-colors hover:border-slate-600 hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+          className="flex items-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-4 py-2.5 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan focus:outline-none focus-visible:ring-2 focus-visible:ring-fiber-cyan"
         >
           <Settings className="h-4 w-4" aria-hidden="true" />
           Configuración GitHub
@@ -577,7 +768,7 @@ export function AdminView({ editId }: AdminViewProps) {
       <div className="flex flex-col gap-1.5">
         <label
           htmlFor="admin-mode"
-          className="text-xs font-bold uppercase tracking-wide text-slate-400"
+          className="font-mono text-xs font-bold uppercase tracking-[0.14em] text-slate-500"
         >
           Modo
         </label>
@@ -596,19 +787,9 @@ export function AdminView({ editId }: AdminViewProps) {
         </select>
       </div>
 
-      {!isConfigComplete(config) && (
-        <div className="flex items-start gap-2 rounded-xl bg-amber-500/10 p-3 text-amber-300">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <p className="text-sm font-medium">
-            Aún no has configurado GitHub. Pulsa “Configuración GitHub” para añadir tu token,
-            usuario y repositorio antes de publicar.
-          </p>
-        </div>
-      )}
-
       {/* Datos principales */}
-      <section className="rounded-2xl border border-slate-700/60 bg-slate-800 p-4 shadow-lg">
-        <h2 className="mb-3 text-base font-bold text-slate-50">Datos principales</h2>
+      <section className="hud-panel rounded-2xl border border-fiber-border bg-fiber-card p-4 shadow-card-glow">
+        <h2 className="mb-3 font-mono text-base font-bold uppercase tracking-wide text-slate-50">Datos principales</h2>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Marca" required>
@@ -703,116 +884,105 @@ export function AdminView({ editId }: AdminViewProps) {
         </div>
       </section>
 
-      {/* Carga de imagen */}
-      <section className="rounded-2xl border border-slate-700/60 bg-slate-800 p-4 shadow-lg">
-        <h2 className="mb-3 text-base font-bold text-slate-50">Captura de login</h2>
-
-        {imagePreview ? (
-          <div className="flex flex-col gap-3">
-            <div className="relative overflow-hidden rounded-xl border border-slate-700 bg-slate-950">
-              <img
-                src={imagePreview}
-                alt="Vista previa de la captura de login"
-                className="h-44 w-full object-contain"
-              />
-              <button
-                type="button"
-                onClick={clearImage}
-                aria-label="Quitar imagen"
-                className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-slate-950/80 text-slate-100 transition-colors hover:bg-slate-800"
-              >
-                <X className="h-5 w-5" aria-hidden="true" />
-              </button>
-            </div>
-            <p className="text-xs font-medium text-slate-400">
-              {imageSizeKb !== null
-                ? `Comprimido: ${imageSizeKb} KB en WebP`
-                : editingId
-                  ? 'Imagen actual · arrastra una nueva para reemplazarla'
-                  : 'Imagen lista para publicar'}
-            </p>
-          </div>
-        ) : (
-          <div
-            role="button"
-            tabIndex={0}
-            onClick={() => fileInputRef.current?.click()}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') fileInputRef.current?.click()
-            }}
-            onDragOver={(event) => {
-              event.preventDefault()
-              setIsDragging(true)
-            }}
-            onDragLeave={() => setIsDragging(false)}
-            onDrop={handleDrop}
-            className={`flex cursor-pointer flex-col items-center gap-2 rounded-xl border-2 border-dashed p-8 text-center transition-colors ${
-              isDragging
-                ? 'border-primary-500 bg-primary-600/10'
-                : 'border-slate-700 bg-slate-900/40 hover:border-slate-600'
-            }`}
-          >
-            <ImagePlus className="h-8 w-8 text-slate-500" aria-hidden="true" />
-            <p className="text-sm font-semibold text-slate-300">
-              Arrastra o selecciona la captura de login
-            </p>
-            <p className="text-xs text-slate-500">PNG / JPG · se optimiza a WebP automáticamente</p>
-          </div>
-        )}
-
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          onChange={handleFileInput}
-          className="hidden"
-        />
-
-        {imageError && (
-          <p className="mt-2 text-xs font-medium text-red-400">{imageError}</p>
-        )}
+      {/* Imágenes (login + equipo físico) */}
+      <section className="hud-panel rounded-2xl border border-fiber-border bg-fiber-card p-4 shadow-card-glow">
+        <h2 className="mb-3 font-mono text-base font-bold uppercase tracking-wide text-slate-50">Imágenes del equipo</h2>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <ImageDropzone
+            title="🖥️ Captura de login"
+            hint="Arrastra o selecciona la pantalla de login"
+            targetName={`images/onus/${currentId}-login.webp`}
+            slot={loginSlot}
+            onFile={(file) => void processImage(file, setLoginSlot)}
+            onClear={() => setLoginSlot(emptySlot())}
+          />
+          <ImageDropzone
+            title="📦 Foto física de la ONU"
+            hint="Arrastra o selecciona una foto del equipo"
+            targetName={`images/onus/${currentId}-device.webp`}
+            slot={deviceSlot}
+            onFile={(file) => void processImage(file, setDeviceSlot)}
+            onClear={() => setDeviceSlot(emptySlot())}
+          />
+        </div>
       </section>
 
       {/* Enlaces de manuales */}
-      <section className="rounded-2xl border border-slate-700/60 bg-slate-800 p-4 shadow-lg">
-        <h2 className="mb-3 text-base font-bold text-slate-50">Manuales existentes (Drive)</h2>
+      <section className="hud-panel rounded-2xl border border-fiber-border bg-fiber-card p-4 shadow-card-glow">
+        <h2 className="mb-1 font-mono text-base font-bold uppercase tracking-wide text-slate-50">Enlaces de Manuales (Drive/PDF)</h2>
+        <p className="mb-3 font-mono text-xs text-slate-400">
+          Cada enlace necesita <strong className="text-fiber-cyan">Etiqueta</strong> y{' '}
+          <strong className="text-fiber-cyan">URL</strong>. Deja la fila vacía si no aplica.
+        </p>
 
-        <div className="flex flex-col gap-2">
-          {manuals.map((manual, index) => (
-            <div key={index} className="flex items-center gap-2">
-              <input
-                type="text"
-                value={manual.label}
-                onChange={(event) => updateManual(index, { label: event.target.value })}
-                placeholder="Manual 1"
-                aria-label={`Etiqueta del enlace ${index + 1}`}
-                className={`${inputClass} w-32 shrink-0`}
-              />
-              <input
-                type="url"
-                value={manual.url}
-                onChange={(event) => updateManual(index, { url: event.target.value })}
-                placeholder="https://drive.google.com/…"
-                aria-label={`URL del enlace ${index + 1}`}
-                className={inputClass}
-              />
-              <button
-                type="button"
-                onClick={() => removeManual(index)}
-                disabled={manuals.length === 1}
-                aria-label={`Quitar enlace ${index + 1}`}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
+        <div className="flex flex-col gap-3">
+          {manuals.map((manual, index) => {
+            const label = manual.label.trim()
+            const url = manual.url.trim()
+            const partiallyFilled = (label === '') !== (url === '')
+            const invalidUrl = url !== '' && !/^https?:\/\//i.test(url)
+
+            return (
+              <div
+                key={index}
+                className="rounded-xl border border-fiber-border bg-fiber-dark/50 p-3"
               >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-              </button>
-            </div>
-          ))}
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs font-bold uppercase tracking-[0.14em] text-fiber-cyan">
+                    Enlace {index + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeManual(index)}
+                    disabled={manuals.length === 1}
+                    aria-label={`Quitar enlace ${index + 1}`}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+                  <Field label="Etiqueta / Nombre">
+                    <input
+                      type="text"
+                      value={manual.label}
+                      onChange={(event) => updateManual(index, { label: event.target.value })}
+                      placeholder="Manual de Configuración"
+                      className={inputClass}
+                    />
+                  </Field>
+
+                  <Field label="Enlace URL">
+                    <input
+                      type="url"
+                      value={manual.url}
+                      onChange={(event) => updateManual(index, { url: event.target.value })}
+                      placeholder="https://drive.google.com/..."
+                      className={inputClass}
+                    />
+                  </Field>
+                </div>
+
+                {partiallyFilled && (
+                  <p className="mt-2 font-mono text-[11px] font-medium text-fiber-amber">
+                    Completa la etiqueta y la URL, o deja la fila vacía.
+                  </p>
+                )}
+                {invalidUrl && (
+                  <p className="mt-1 font-mono text-[11px] font-medium text-red-400">
+                    La URL debe empezar por http:// o https://.
+                  </p>
+                )}
+              </div>
+            )
+          })}
         </div>
 
         <button
           type="button"
           onClick={addManual}
-          className="mt-3 flex items-center gap-1.5 rounded-xl px-2 py-1.5 text-sm font-bold text-primary-300 transition-colors hover:text-primary-200"
+          className="mt-3 flex items-center gap-1.5 rounded-xl px-2 py-1.5 font-mono text-sm font-bold text-fiber-cyan transition-colors hover:text-fiber-teal"
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
           Agregar otro enlace
@@ -820,9 +990,9 @@ export function AdminView({ editId }: AdminViewProps) {
       </section>
 
       {/* Constructor de checklist */}
-      <section className="rounded-2xl border border-slate-700/60 bg-slate-800 p-4 shadow-lg">
+      <section className="hud-panel rounded-2xl border border-fiber-border bg-fiber-card p-4 shadow-card-glow">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="text-base font-bold text-slate-50">Checklist interactivo</h2>
+          <h2 className="font-mono text-base font-bold uppercase tracking-wide text-slate-50">Checklist interactivo</h2>
           <label className="flex cursor-pointer items-center gap-2">
             <span className="text-sm font-semibold text-slate-300">Crear paso a paso</span>
             <input
@@ -833,11 +1003,11 @@ export function AdminView({ editId }: AdminViewProps) {
             />
             <span
               className={`relative h-6 w-11 rounded-full transition-colors ${
-                enableChecklist ? 'bg-success-600' : 'bg-slate-700'
+                enableChecklist ? 'bg-fiber-emerald' : 'bg-fiber-border'
               }`}
             >
               <span
-                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-slate-100 transition-transform ${
                   enableChecklist ? 'translate-x-5' : 'translate-x-0.5'
                 }`}
               />
@@ -850,10 +1020,10 @@ export function AdminView({ editId }: AdminViewProps) {
             {steps.map((step, index) => (
               <div
                 key={index}
-                className="rounded-xl border border-slate-700 bg-slate-900/40 p-3"
+                className="rounded-xl border border-fiber-border bg-fiber-dark/50 p-3"
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wide text-primary-300">
+                  <span className="font-mono text-xs font-bold uppercase tracking-[0.14em] text-fiber-cyan">
                     Paso {index + 1}
                   </span>
                   <button
@@ -899,7 +1069,7 @@ export function AdminView({ editId }: AdminViewProps) {
             <button
               type="button"
               onClick={addStep}
-              className="flex w-fit items-center gap-1.5 rounded-xl px-2 py-1.5 text-sm font-bold text-primary-300 transition-colors hover:text-primary-200"
+              className="flex w-fit items-center gap-1.5 rounded-xl px-2 py-1.5 font-mono text-sm font-bold text-fiber-cyan transition-colors hover:text-fiber-teal"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Agregar paso
@@ -914,10 +1084,10 @@ export function AdminView({ editId }: AdminViewProps) {
           <div
             className={`flex items-start gap-2 rounded-xl p-3 text-sm font-medium ${
               publishStatus === 'success'
-                ? 'bg-success-600/15 text-success-400'
+                ? 'bg-fiber-emerald/15 text-fiber-emerald'
                 : publishStatus === 'error'
                   ? 'bg-red-500/15 text-red-400'
-                  : 'bg-slate-800 text-slate-300'
+                  : 'bg-fiber-cardHover text-slate-300'
             }`}
             role="status"
             aria-live="polite"
@@ -928,44 +1098,103 @@ export function AdminView({ editId }: AdminViewProps) {
             {publishStatus === 'error' && (
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             )}
-            {isPublishing && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />}
+            {isWorking && <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" aria-hidden="true" />}
             <span>{publishMessage}</span>
           </div>
         )}
 
         {!requiredOk && (
-          <p className="text-xs font-medium text-slate-400">
-            Completa los campos obligatorios (*): Marca, Modelo, Usuario y Contraseña.
+          <p className="font-mono text-xs font-medium text-slate-400">
+            Completa los campos obligatorios (*): Marca, Modelo, Usuario y Contraseña. Los enlaces
+            de manual deben tener Etiqueta + URL (o estar vacíos).
           </p>
         )}
 
-        <button
-          type="button"
-          onClick={handlePublish}
-          disabled={!requiredOk || isPublishing}
-          className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-primary-600 px-5 text-base font-bold text-white shadow-lg shadow-primary-600/30 transition-colors hover:bg-primary-500 active:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {isPublishing ? (
-            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-          ) : (
-            <span aria-hidden="true">{editingId ? '✏️' : '🚀'}</span>
-          )}
-          {editingId ? 'Actualizar en GitHub' : 'Publicar en GitHub'}
-        </button>
+        {/* Pestañas de acción */}
+        <div className="grid grid-cols-2 gap-1 rounded-xl border border-fiber-border bg-fiber-dark p-1">
+          <button
+            type="button"
+            onClick={() => setActionMode('manual')}
+            className={`min-h-[40px] rounded-lg px-2 font-mono text-xs font-bold uppercase tracking-wide transition-all duration-200 ${
+              actionMode === 'manual'
+                ? 'bg-fiber-teal text-fiber-dark shadow-cyan-glow'
+                : 'text-slate-500 hover:text-fiber-cyan'
+            }`}
+          >
+            Guardar local
+          </button>
+          <button
+            type="button"
+            onClick={() => setActionMode('advanced')}
+            className={`min-h-[40px] rounded-lg px-2 font-mono text-xs font-bold uppercase tracking-wide transition-all duration-200 ${
+              actionMode === 'advanced'
+                ? 'bg-fiber-teal text-fiber-dark shadow-cyan-glow'
+                : 'text-slate-500 hover:text-fiber-cyan'
+            }`}
+          >
+            Avanzado: Push por API
+          </button>
+        </div>
 
-        <button
-          type="button"
-          onClick={handleCopyJson}
-          disabled={!requiredOk}
-          className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-5 text-sm font-bold text-slate-100 transition-colors hover:border-slate-500 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {jsonCopied ? (
-            <CheckCircle2 className="h-4 w-4 text-success-400" aria-hidden="true" />
-          ) : (
-            <span aria-hidden="true">📋</span>
-          )}
-          {jsonCopied ? '¡JSON copiado!' : 'Copiar Objeto JSON'}
-        </button>
+        {actionMode === 'manual' ? (
+          <>
+            <button
+              type="button"
+              onClick={handleDownloadFile}
+              disabled={!requiredOk}
+              className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fiber-teal to-fiber-cyan px-5 font-mono text-base font-bold uppercase tracking-wide text-fiber-dark shadow-cyan-glow transition-all duration-200 hover:from-fiber-cyan hover:to-fiber-teal active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span aria-hidden="true">💾</span>
+              Descargar archivo onus.ts
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCopyPrompt}
+              disabled={!requiredOk}
+              className="flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-5 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span aria-hidden="true">{promptCopied ? '✅' : '📋'}</span>
+              {promptCopied ? 'Prompt copiado' : 'Copiar Código para OpenCode'}
+            </button>
+
+            <p className="font-mono text-xs leading-relaxed text-slate-500">
+              Reemplaza <code className="font-mono text-fiber-cyan/90">src/data/onus.ts</code> con el archivo
+              descargado y haz push. Si subiste imágenes nuevas, descárgalas desde cada miniatura y
+              guárdalas en <code className="font-mono text-fiber-cyan/90">public/images/onus/</code>.
+            </p>
+          </>
+        ) : (
+          <>
+            {!isConfigComplete(config) && (
+              <div className="flex items-start gap-2 rounded-xl border border-fiber-amber/25 bg-fiber-amber/10 p-3 text-fiber-amber">
+                <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <p className="text-sm font-medium">
+                  El push directo necesita un token de GitHub. Si prefieres no configurarlo, usa la
+                  pestaña “Guardar local”.
+                </p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handlePublish}
+              disabled={!requiredOk || isWorking}
+              className="flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fiber-teal to-fiber-cyan px-5 font-mono text-base font-bold uppercase tracking-wide text-fiber-dark shadow-cyan-glow transition-all duration-200 hover:from-fiber-cyan hover:to-fiber-teal active:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isWorking ? (
+                <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+              ) : (
+                <span aria-hidden="true">{editingId ? '✏️' : '🚀'}</span>
+              )}
+              {editingId ? 'Actualizar en GitHub' : 'Publicar en GitHub'}
+            </button>
+
+            <p className="font-mono text-xs leading-relaxed text-slate-500">
+              Sube las imágenes y hace commit directo en <code className="font-mono text-fiber-cyan/90">{config.branch || 'main'}</code>.
+            </p>
+          </>
+        )}
       </section>
 
       {showSettings && (

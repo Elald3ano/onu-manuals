@@ -3,35 +3,47 @@ export default {
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
-      // Paleta primaria azul/índigo de alto contraste, pensada para leer
-      // bajo luz solar directa (pantallas de campo).
       colors: {
-        primary: {
-          50: '#eff6ff',
-          100: '#dbeafe',
-          200: '#bfdbfe',
-          300: '#93c5fd',
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
-          700: '#1d4ed8',
-          800: '#1e40af',
-          900: '#1e3a8a',
-          950: '#172554',
+        // Identidad "Industrial Cyber-Fiber": consola táctica de fibra óptica.
+        fiber: {
+          dark: '#070b12', // Fondo principal ultra oscuro (ahorro batería OLED)
+          card: '#0f172a', // Superficie de tarjetas
+          cardHover: '#131e36', // Hover suave
+          border: '#1e293b', // Bordes sutiles
+          borderGlow: '#06b6d4', // Borde con destello
+          cyan: '#00f2fe', // Láser de fibra óptica (acento principal)
+          teal: '#06b6d4', // Primario de soporte
+          amber: '#f59e0b', // Táctico para credenciales e IPs
+          emerald: '#10b981', // Confirmaciones y copiado
         },
-        // Estados de éxito (verde) para confirmaciones y estado "Online".
+        // Alias semánticos heredados por los componentes, alineados a la
+        // nueva identidad (cian/turquesa) para mantener coherencia visual.
+        primary: {
+          50: '#ecfeff',
+          100: '#cffafe',
+          200: '#a5f3fc',
+          300: '#67e8f9',
+          400: '#22d3ee',
+          500: '#06b6d4',
+          600: '#0891b2',
+          700: '#0e7490',
+          800: '#155e75',
+          900: '#164e63',
+          950: '#083344',
+        },
+        // Confirmaciones, copiado y estados correctos.
         success: {
-          50: '#f0fdf4',
-          100: '#dcfce7',
-          200: '#bbf7d0',
-          300: '#86efac',
-          400: '#4ade80',
-          500: '#22c55e',
-          600: '#16a34a',
-          700: '#15803d',
-          800: '#166534',
-          900: '#14532d',
-          950: '#052e16',
+          50: '#ecfdf5',
+          100: '#d1fae5',
+          200: '#a7f3d0',
+          300: '#6ee7b7',
+          400: '#34d399',
+          500: '#10b981',
+          600: '#059669',
+          700: '#047857',
+          800: '#065f46',
+          900: '#064e3b',
+          950: '#022c22',
         },
       },
       fontFamily: {
@@ -45,6 +57,12 @@ export default {
           'Arial',
           'sans-serif',
         ],
+        // Acento "consola táctica". Si no hay fuente local, cae al mono del sistema.
+        mono: ['JetBrains Mono', 'Fira Code', 'ui-monospace', 'monospace'],
+      },
+      boxShadow: {
+        'cyan-glow': '0 0 20px -5px rgba(6, 182, 212, 0.25)',
+        'card-glow': '0 8px 30px -10px rgba(0, 242, 254, 0.1)',
       },
     },
   },

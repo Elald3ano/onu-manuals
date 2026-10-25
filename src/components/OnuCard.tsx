@@ -1,8 +1,8 @@
-import { useState } from 'react'
 import type { ReactNode } from 'react'
-import { AlertTriangle, ExternalLink, KeyRound, Router, User, Wifi } from 'lucide-react'
+import { AlertTriangle, ExternalLink, KeyRound, User, Wifi } from 'lucide-react'
 import type { ONU } from '../types/onu'
 import { CopyButton } from './CopyButton'
+import { OnuImageGallery } from './OnuImageGallery'
 
 interface OnuCardProps {
   onu: ONU
@@ -18,16 +18,16 @@ interface DataRowProps {
 
 function DataRow({ label, value, copyValue, icon }: DataRowProps) {
   return (
-    <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-900/60 p-2.5">
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-fiber-border/70 bg-fiber-dark/60 p-2.5">
       <div className="flex min-w-0 items-center gap-2">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-primary-300">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-fiber-teal/10 text-fiber-cyan ring-1 ring-inset ring-fiber-teal/20">
           {icon}
         </span>
         <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+          <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
             {label}
           </p>
-          <p className="truncate font-mono text-sm font-semibold text-slate-100">{value}</p>
+          <p className="truncate font-mono text-sm font-semibold text-fiber-amber">{value}</p>
         </div>
       </div>
       <CopyButton
@@ -41,8 +41,6 @@ function DataRow({ label, value, copyValue, icon }: DataRowProps) {
 }
 
 export function OnuCard({ onu, onOpen }: OnuCardProps) {
-  const [imageFailed, setImageFailed] = useState(false)
-
   const ipValue = onu.defaultIp || '192.168.1.1'
   const ipDisplay = onu.defaultIp || '192.168.1.1 (sugerida)'
   const manuals = (onu.legacyManuals ?? []).filter(
@@ -52,34 +50,28 @@ export function OnuCard({ onu, onOpen }: OnuCardProps) {
   return (
     <article
       onClick={() => onOpen(onu.id)}
-      className="flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-slate-700/60 bg-slate-800 shadow-lg shadow-slate-950/40 transition-colors hover:border-slate-600"
+      className="group flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-fiber-border bg-fiber-card shadow-card-glow transition-all duration-300 hover:-translate-y-0.5 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:shadow-cyan-glow"
     >
-      {/* Cabecera: miniatura + marca/modelo */}
-      <div className="flex items-start gap-3 p-4">
-        <div className="relative h-16 w-24 shrink-0 overflow-hidden rounded-xl border border-slate-700 bg-slate-900">
-          {imageFailed || !onu.loginUiImage ? (
-            <div className="flex h-full w-full items-center justify-center text-slate-500">
-              <Router className="h-7 w-7" aria-hidden="true" />
-            </div>
-          ) : (
-            <img
-              src={onu.loginUiImage}
-              alt={`Pantalla de login de ${onu.brand} ${onu.model}`}
-              loading="lazy"
-              onError={() => setImageFailed(true)}
-              className="h-full w-full object-cover"
-            />
-          )}
-        </div>
+      {/* Galería (interfaz login / equipo físico) */}
+      <div className="px-4 pt-4">
+        <OnuImageGallery
+          loginUiImage={onu.loginUiImage}
+          deviceImage={onu.deviceImage}
+          alt={`${onu.brand} ${onu.model}`}
+          variant="card"
+        />
+      </div>
 
+      {/* Cabecera: marca/modelo */}
+      <div className="flex items-start gap-3 px-4 pt-3">
         <div className="min-w-0 flex-1">
-          <span className="inline-flex items-center rounded-full bg-primary-600/20 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-primary-300">
+          <span className="inline-flex items-center rounded-full border border-fiber-teal/30 bg-fiber-teal/10 px-2.5 py-0.5 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-fiber-cyan">
             {onu.brand}
           </span>
-          <h3 className="mt-1 truncate text-xl font-bold leading-tight text-slate-50">
+          <h3 className="mt-1 truncate font-mono text-xl font-bold leading-tight tracking-tight text-slate-50 transition-colors duration-200 group-hover:text-fiber-cyan">
             {onu.model}
           </h3>
-          <p className="mt-0.5 truncate text-xs text-slate-400">
+          <p className="mt-0.5 truncate text-xs text-slate-500">
             {onu.aliases.length > 0
               ? `También: ${onu.aliases.join(' · ')}`
               : 'ONU / ONT'}
@@ -89,14 +81,14 @@ export function OnuCard({ onu, onOpen }: OnuCardProps) {
 
       {/* Aviso técnico */}
       {onu.notes && (
-        <div className="mx-4 mb-3 flex items-start gap-1.5 rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-amber-300">
+        <div className="mx-4 mt-3 flex items-start gap-1.5 rounded-lg border border-fiber-amber/25 bg-fiber-amber/10 px-2.5 py-1.5 text-fiber-amber">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <p className="line-clamp-2 text-[11px] font-medium leading-snug">{onu.notes}</p>
         </div>
       )}
 
       {/* Datos rápidos */}
-      <div className="flex flex-col gap-2 px-4">
+      <div className="mt-3 flex flex-col gap-2 px-4">
         <DataRow
           label="IP"
           value={ipDisplay}
@@ -125,7 +117,7 @@ export function OnuCard({ onu, onOpen }: OnuCardProps) {
             event.stopPropagation()
             onOpen(onu.id)
           }}
-          className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-primary-600 px-4 text-sm font-bold text-white shadow-lg shadow-primary-600/30 transition-colors hover:bg-primary-500 active:bg-primary-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-300"
+          className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-fiber-teal to-fiber-cyan px-4 font-mono text-sm font-bold uppercase tracking-wide text-fiber-dark shadow-cyan-glow transition-all duration-200 hover:from-fiber-cyan hover:to-fiber-teal active:brightness-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-fiber-cyan focus-visible:ring-offset-2 focus-visible:ring-offset-fiber-dark"
         >
           Ver Manual / Configuración
         </button>
@@ -137,11 +129,11 @@ export function OnuCard({ onu, onOpen }: OnuCardProps) {
             target="_blank"
             rel="noopener noreferrer"
             onClick={(event) => event.stopPropagation()}
-            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-4 text-sm font-bold text-slate-100 transition-colors hover:border-slate-500 hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+            className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-fiber-border bg-fiber-dark/60 px-4 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan focus:outline-none focus-visible:ring-2 focus-visible:ring-fiber-cyan"
           >
             <ExternalLink className="h-4 w-4" aria-hidden="true" />
             <span className="truncate">
-              {manual.label} <span className="font-normal text-slate-400">· PDF</span>
+              {manual.label} <span className="font-normal text-slate-500">· PDF</span>
             </span>
           </a>
         ))}

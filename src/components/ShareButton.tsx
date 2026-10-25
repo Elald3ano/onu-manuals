@@ -50,7 +50,7 @@ export function ShareButton({ onu }: ShareButtonProps) {
         href={whatsappUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 text-sm font-bold text-white transition-colors hover:bg-[#1ebd5b] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900"
+        className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-[#25D366] px-4 font-mono text-sm font-bold text-[#04231a] shadow-card-glow transition-all duration-200 hover:bg-[#1ebd5b] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#25D366]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-fiber-dark"
       >
         <MessageCircle className="h-4 w-4" aria-hidden="true" />
         Compartir por WhatsApp
@@ -59,10 +59,10 @@ export function ShareButton({ onu }: ShareButtonProps) {
       <button
         type="button"
         onClick={handleCopyLink}
-        className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-slate-600 bg-slate-800 px-4 text-sm font-bold text-slate-100 transition-colors hover:border-slate-500 hover:bg-slate-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+        className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-fiber-border bg-fiber-card px-4 font-mono text-sm font-bold text-slate-200 transition-all duration-200 hover:border-fiber-teal/60 hover:bg-fiber-cardHover hover:text-fiber-cyan focus:outline-none focus-visible:ring-2 focus-visible:ring-fiber-cyan"
       >
         {copied ? (
-          <Check className="h-4 w-4 text-success-400" aria-hidden="true" />
+          <Check className="h-4 w-4 text-fiber-emerald" aria-hidden="true" />
         ) : (
           <LinkIcon className="h-4 w-4" aria-hidden="true" />
         )}

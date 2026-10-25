@@ -11,11 +11,11 @@ export default function App() {
   const { route, params, query, navigate } = useHashRoute()
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-900 text-slate-100">
+    <div className="flex min-h-screen flex-col bg-fiber-dark text-slate-100">
       <Header isOnline={isOnline} />
 
       {/* Contenido según la ruta hash */}
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-4">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-4 sm:py-6">
         {route === 'catalog' && (
           <CatalogView onus={ONUS} onOpenOnu={(id) => navigate(`#/onu/${id}`)} />
         )}
@@ -25,7 +25,7 @@ export default function App() {
         {route === 'admin' && <AdminView editId={query.edit} />}
       </main>
 
-      <footer className="safe-bottom border-t border-slate-800 px-4 py-4 text-center text-xs text-slate-500">
+      <footer className="safe-bottom border-t border-fiber-border/70 px-4 py-4 text-center font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">
         onu-manuals v0.1.0 · PWA Mobile-First · Funciona sin conexión
       </footer>
     </div>
